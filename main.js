@@ -803,6 +803,12 @@ const WIDGETS = [
   "from": "Prototype"
  },
  {
+  "id": "proto.modules",
+  "label": "Optional modules",
+  "desc": "Remove parts of the standard vault you do not use (wiki, retreats, writing, prompts and AI, examples); shows the list and moves it to .trash.",
+  "from": "Prototype"
+ },
+ {
   "id": "proto.purchases",
   "label": "Purchases",
   "desc": "Every priced task across projects, grouped by shop.",
@@ -1337,6 +1343,7 @@ class LifeOSHomeView extends ItemView {
       case "proto.sequence": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/sequence", { allProjects: true, area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture");`);
       case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Study/views/courses");`);
+      case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Modules/views/modules");`);
       case "proto.purchases": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/purchases", { currency: "EUR", area: ${JSON.stringify(this.tabArea())} });`);
       default: {
         if (id.startsWith("user:")) return this.renderDataviewWidget(parent, `await dv.view(${JSON.stringify(`${USER_WIDGET_DIR}/${id.slice(5)}`)}, { area: ${JSON.stringify(this.tabArea())} });`);
