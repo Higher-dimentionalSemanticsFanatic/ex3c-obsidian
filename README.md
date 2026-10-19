@@ -15,3 +15,6 @@ This repository is private. Two ways in:
 
 ## Release
 Raise `version` in `manifest.json`, add it to `versions.json` with the minimum Obsidian version, note it in `CHANGELOG.md`, commit, then tag the commit with the same version and push the tag. The release workflow attaches the files.
+
+## Font
+The app name uses League Spartan Black by The League Spartan Project Authors, under the SIL Open Font License 1.1 (`LeagueSpartan-OFL.txt`), embedded in `styles.css`.

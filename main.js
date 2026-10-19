@@ -1376,7 +1376,7 @@ class LifeOSHomeView extends ItemView {
     const mark = identity.createSpan({ cls: "life-os-mark" });
     setIcon(mark, "calendar-check-2");
     const words = identity.createDiv();
-    words.createEl("h1", { text: this.appName().toUpperCase() });
+    words.createEl("h1", { text: this.appName() });
     words.createEl("p", { text: "See clearly. Choose deliberately. Live fully." });
     hero.createDiv({ cls: "life-os-date", text: moment().format("dddd DD-MM-YYYY") });
     const status = hero.createDiv({ cls: "life-os-status-row" });
@@ -1619,7 +1619,7 @@ class LifeOSHomeView extends ItemView {
     brand.type = "button";
     const mark = brand.createSpan();
     setIcon(mark, "calendar-check-2");
-    brand.createSpan({ text: this.appName().toUpperCase(), cls: this.appName().length > 8 ? "is-long" : "" });
+    brand.createSpan({ text: this.appName(), cls: this.appName().length > 8 ? "is-long" : "" });
     brand.addEventListener("click", () => {
       this.activeScreen = this.layout.tabs[0]?.id ?? null;
       this.render(true);

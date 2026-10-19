@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The app name is set in League Spartan Black (SIL Open Font License, `LeagueSpartan-OFL.txt`), embedded in styles.css so it works offline and on phones.
 - Renamed to EX3C Agenda: plugin id `ex3c-agenda`, layout note `Meta/EX3C Agenda Layout.md`, calendar icon instead of the compass.
 - App name: change the name shown in the rail, the header and the tab title in Configure (saved in the layout note).
 - Optional modules widget.
