@@ -1,0 +1,19 @@
+# Push a tag that matches manifest.json's version (for example 0.21.0) and this attaches
+# main.js, manifest.json and styles.css to a GitHub release, which is what BRAT and Obsidian download.
+name: Release
+on:
+  push:
+    tags: ["*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches manifest.json
+        run: test "$(jq -r .version manifest.json)" = "${GITHUB_REF_NAME}"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"

@@ -1,0 +1,9 @@
+{
+  "id": "life-os-app",
+  "name": "Life OS",
+  "version": "0.20.0",
+  "minAppVersion": "1.13.1",
+  "description": "A local-first home surface for planning, reflection, capture, and AI-assisted work.",
+  "author": "Life OS",
+  "isDesktopOnly": false
+}
