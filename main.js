@@ -819,6 +819,55 @@ const AREA_TAG_RE = /(^|\s)#(work|study|personal)(?=\s|$)/i;
 // Folders that hold no real tasks for the feed (templates, docs, prompts, settings, the knowledge layer).
 const TASK_EXCLUDED = ["Templates/", "scripts/", "wiki/", "Guide/", "Prompts/", "Meta/", ".trash/"];
 const TAB_ICONS = Object.fromEntries(NAV_ITEMS.map((item) => [item.id, item.icon]));
+// Workflows: every widget belongs to one, shown as a colour on the widget, in the Widgets panel and on tabs.
+// The colours are CSS variables (--wf-<id>) so a theme can change them.
+const WORKFLOWS = [
+  { id: "capture", label: "Capture" },
+  { id: "daily", label: "Daily check-in" },
+  { id: "plan", label: "Planning" },
+  { id: "tasks", label: "Tasks and focus" },
+  { id: "projects", label: "Projects and study" },
+  { id: "review", label: "Review" },
+  { id: "people", label: "People" },
+  { id: "writing", label: "Writing and library" },
+  { id: "system", label: "System and AI" },
+  { id: "yours", label: "Your widgets" },
+];
+function workflowOf(id) {
+  if (id.startsWith("user:")) return "yours";
+  if (/^(proto\.capture|capture\.|home\.capture)/.test(id)) return "capture";
+  if (/^today\./.test(id) || /^home\.(signals|now)$/.test(id)) return "daily";
+  if (/^(plan\.|proto\.planner|home\.horizons)/.test(id)) return "plan";
+  if (/^focus\./.test(id)) return "tasks";
+  if (/^(projects\.|proto\.(sequence|purchases|courses))/.test(id)) return "projects";
+  if (/^review\./.test(id)) return "review";
+  if (/^people\./.test(id)) return "people";
+  if (/^(create|library)\./.test(id)) return "writing";
+  return "system";
+}
+// The workflow a tab mostly holds (ties go to the first widget's).
+function tabWorkflow(tab) {
+  const n = {};
+  for (const w of tab.widgets) n[workflowOf(w)] = (n[workflowOf(w)] || 0) + 1;
+  return Object.keys(n).sort((a, b) => n[b] - n[a] || tab.widgets.findIndex((w) => workflowOf(w) === a) - tab.widgets.findIndex((w) => workflowOf(w) === b))[0] || "system";
+}
+// Icons to choose from for a page (Lucide names, as Obsidian ships them).
+const PAGE_ICONS = ["home", "sun", "sunrise", "calendar-range", "calendar-days", "crosshair", "target", "line-chart", "folder-kanban", "graduation-cap", "book-open", "briefcase", "user", "users", "heart", "pen-tool", "library", "brain", "sparkles", "layout-grid", "list-checks", "inbox", "rocket", "flask-conical", "dumbbell", "wallet", "shopping-cart", "music", "gamepad-2", "plane", "leaf", "coffee", "lightbulb", "compass", "map", "flag", "star", "zap", "shield", "settings"];
+
+// Themes: a preset accent for the whole app, and an accent per area so Work, Study and Personal feel different.
+const THEME_PRESETS = { default: "#bb876e", ocean: "#3d8bd4", forest: "#4f9a6b", violet: "#8f6bdc", ember: "#e0714f", mono: "#9aa0a6" };
+const DEFAULT_AREA_COLORS = { work: "#4a7fd4", study: "#8f6bdc", personal: "#4bb38a" };
+const HEX = /^#[0-9a-f]{6}$/i;
+function normalizeTheme(raw) {
+  const t = raw && typeof raw === "object" ? raw : {};
+  const preset = THEME_PRESETS[t.preset] ? t.preset : "default";
+  const areas = {};
+  for (const a of AREAS) areas[a] = HEX.test(t.areas?.[a]) ? t.areas[a] : DEFAULT_AREA_COLORS[a];
+  return { preset, areas, areaTint: t.areaTint !== false };
+}
+function themeAccent(theme, area) {
+  return area && theme.areas[area] ? theme.areas[area] : THEME_PRESETS[theme.preset] || THEME_PRESETS.default;
+}
 
 function normalizeLayout(raw) {
   const source = raw && Array.isArray(raw.tabs) ? raw : DEFAULT_LAYOUT;
@@ -834,7 +883,7 @@ function normalizeLayout(raw) {
     const area = AREAS.includes(String(tab.area || "").toLowerCase()) ? String(tab.area).toLowerCase() : null;
     tabs.push({ id, label: String(tab.label || id), ...(tab.icon ? { icon: String(tab.icon) } : {}), ...(area ? { area } : {}), widgets });
   }
-  return { tabs };
+  return { tabs, theme: normalizeTheme(source.theme) };
 }
 
 function makeDraggable(component, plugin, el, payload) {
@@ -1005,6 +1054,17 @@ class LifeOSHomeView extends ItemView {
     const keepScroll = sameTab ? root.scrollTop : 0, keepHeight = sameTab ? root.scrollHeight : 0;
     root.empty();
     root.addClass("life-os-home");
+    // theme: the tab's area colour, or the preset accent; also handed to widgets as Obsidian's accent
+    const theme = this.layout.theme || normalizeTheme(null);
+    const accent = themeAccent(theme, tab?.area);
+    const css = root.style;
+    if (css) {
+      css.setProperty("--life-os-accent", accent);
+      css.setProperty("--life-os-accent-soft", `color-mix(in srgb, ${accent} 70%, white)`);
+      css.setProperty("--interactive-accent", accent);
+      css.setProperty("--text-accent", `color-mix(in srgb, ${accent} 80%, var(--text-normal))`);
+      if (tab?.area && theme.areaTint) root.setAttribute("data-area", tab.area); else root.removeAttribute("data-area");
+    }
     if (this.plugin.editing) root.addClass("is-editing");
     else root.removeClass?.("is-editing");
 
@@ -1065,13 +1125,14 @@ class LifeOSHomeView extends ItemView {
 
   renderSlot(shell, tab, id, index) {
     const meta = WIDGET_BY_ID.get(id);
-    const slot = shell.createDiv({ cls: "life-os-widget-slot", attr: { "data-widget": id } });
+    const slot = shell.createDiv({ cls: "life-os-widget-slot", attr: { "data-widget": id, "data-workflow": workflowOf(id) } });
     if (this.plugin.editing) {
       slot.addClass("is-editing");
       const bar = slot.createDiv({ cls: "life-os-slot-bar", attr: { title: "Drag to move this widget" } });
       const handle = bar.createSpan({ cls: "life-os-slot-handle" });
       setIcon(handle, "grip-vertical");
       bar.createSpan({ cls: "life-os-slot-title", text: meta?.label || id });
+      bar.createSpan({ cls: "life-os-wf-chip", attr: { "data-workflow": workflowOf(id) }, text: WORKFLOWS.find((w) => w.id === workflowOf(id))?.label || "" });
       const controls = bar.createDiv({ cls: "life-os-slot-controls" });
       const control = (iconName, label, onClick) => {
         const button = controls.createEl("button", { cls: "clickable-icon", attr: { "aria-label": label, title: label } });
@@ -1105,7 +1166,7 @@ class LifeOSHomeView extends ItemView {
     head.createSpan({ text: "Drag a widget by its title bar to reorder it, onto a tab to move it there, or into the Widgets panel to take it off. Drag the tabs below to reorder them. Every change is saved to Meta/Life OS Layout.md." });
     const tabs = bar.createDiv({ cls: "life-os-edit-tabs" });
     for (const tab of this.layout.tabs) {
-      const chip = tabs.createDiv({ cls: tab.id === this.activeScreen ? "life-os-edit-tab is-active" : "life-os-edit-tab" });
+      const chip = tabs.createDiv({ cls: tab.id === this.activeScreen ? "life-os-edit-tab is-active" : "life-os-edit-tab", attr: { "data-workflow": tabWorkflow(tab) } });
       if (this.renamingTab === tab.id) {
         const input = chip.createEl("input", { attr: { type: "text", value: tab.label, "aria-label": "Tab name" } });
         let finished = false;
@@ -1148,7 +1209,52 @@ class LifeOSHomeView extends ItemView {
       select.value = current.area || "";
       this.registerDomEvent(select, "change", () => void this.plugin.setTabArea(current.id, select.value || null));
       areaRow.createSpan({ text: "A tab with an area shows only that area's tasks, projects, and plans." });
+      const iconRow = bar.createDiv({ cls: "life-os-edit-icons" });
+      iconRow.createSpan({ text: `Icon for “${current.label}”:` });
+      const currentIcon = current.icon || TAB_ICONS[current.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[current.area] || "layout-grid";
+      for (const name of PAGE_ICONS) {
+        const pick = iconRow.createEl("button", { cls: name === currentIcon ? "clickable-icon is-active" : "clickable-icon", attr: { "aria-label": name, title: name } });
+        pick.type = "button";
+        setIcon(pick, name);
+        this.registerDomEvent(pick, "click", () => void this.plugin.setTabIcon(current.id, name));
+      }
     }
+    // Standard pages belong to the built-in workflows: one you deleted can always be added back here.
+    const missing = DEFAULT_LAYOUT.tabs.filter((std) => !this.layout.tabs.some((tab) => tab.id === std.id));
+    if (missing.length) {
+      const stdRow = bar.createDiv({ cls: "life-os-edit-standard" });
+      stdRow.createSpan({ text: "Standard pages you removed:" });
+      for (const std of missing) {
+        const b = stdRow.createEl("button", { attr: { "data-workflow": tabWorkflow(std), title: `Add ${std.label} back with its standard widgets` } });
+        b.type = "button";
+        const ic = b.createSpan(); setIcon(ic, std.icon || TAB_ICONS[std.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[std.area] || "layout-grid");
+        b.createSpan({ text: ` + ${std.label}` });
+        this.registerDomEvent(b, "click", () => void this.plugin.restoreTab(std.id));
+      }
+    }
+    const theme = this.layout.theme || normalizeTheme(null);
+    const themeRow = bar.createDiv({ cls: "life-os-edit-theme" });
+    themeRow.createSpan({ text: "Theme:" });
+    for (const [name, color] of Object.entries(THEME_PRESETS)) {
+      const sw = themeRow.createEl("button", { cls: theme.preset === name ? "life-os-swatch is-active" : "life-os-swatch", attr: { title: name, "aria-label": `Theme ${name}`, style: `--sw:${color}` } });
+      sw.type = "button";
+      sw.createSpan({ text: name });
+      this.registerDomEvent(sw, "click", () => void this.plugin.setTheme({ preset: name }));
+    }
+    const areaColors = bar.createDiv({ cls: "life-os-edit-theme" });
+    areaColors.createSpan({ text: "Area colours:" });
+    for (const a of AREAS) {
+      const lab = areaColors.createEl("label", { text: `${a[0].toUpperCase()}${a.slice(1)} ` });
+      const input = lab.createEl("input", { attr: { type: "color", value: theme.areas[a], "aria-label": `${a} colour` } });
+      this.registerDomEvent(input, "change", () => void this.plugin.setTheme({ areas: { ...theme.areas, [a]: input.value } }));
+    }
+    const tint = areaColors.createEl("label", { text: " Tint area pages " });
+    const tintBox = tint.createEl("input", { attr: { type: "checkbox" } });
+    tintBox.checked = theme.areaTint;
+    this.registerDomEvent(tintBox, "change", () => void this.plugin.setTheme({ areaTint: tintBox.checked }));
+    const resetColors = areaColors.createEl("button", { text: "Default colours" });
+    resetColors.type = "button";
+    this.registerDomEvent(resetColors, "click", () => void this.plugin.setTheme({ preset: "default", areas: { ...DEFAULT_AREA_COLORS }, areaTint: true }));
     const actions = bar.createDiv({ cls: "life-os-edit-actions" });
     const button = (label, onClick, cta = false) => {
       const b = actions.createEl("button", { text: label, cls: cta ? "mod-cta" : "" });
@@ -1500,7 +1606,7 @@ class LifeOSHomeView extends ItemView {
     const nav = rail.createEl("nav", { cls: "life-os-nav" });
     for (const tab of this.layout.tabs) {
       const active = this.activeScreen === tab.id;
-      const button = nav.createEl("button", { cls: active ? "life-os-nav-button is-active" : "life-os-nav-button", attr: { "aria-current": active ? "page" : "false", title: tab.label } });
+      const button = nav.createEl("button", { cls: active ? "life-os-nav-button is-active" : "life-os-nav-button", attr: { "aria-current": active ? "page" : "false", title: tab.label, "data-workflow": tabWorkflow(tab) } });
       button.type = "button";
       const icon = button.createSpan();
       setIcon(icon, tab.icon || TAB_ICONS[tab.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[tab.area] || "layout-grid");
@@ -3196,6 +3302,8 @@ class LifeOSWidgetPaletteView extends ItemView {
     if (hadFocus) window.setTimeout(() => { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }, 0);
     makeDropTarget(this, plugin, root, (drag) => void plugin.removeWidget(drag.id, drag.fromTab));
 
+    const legend = root.createDiv({ cls: "life-os-wf-legend" });
+    for (const wf of WORKFLOWS) legend.createSpan({ cls: "life-os-wf-chip", attr: { "data-workflow": wf.id }, text: wf.label });
     const where = new Map();
     for (const tab of plugin.layout.tabs) for (const id of tab.widgets) where.set(id, [...(where.get(id) || []), tab]);
     const q = this.query.trim().toLowerCase();
@@ -3210,13 +3318,13 @@ class LifeOSWidgetPaletteView extends ItemView {
       for (const widget of list) {
         const onTabs = where.get(widget.id) || [];
         const tab = onTabs[0];
-        const item = root.createDiv({ cls: `life-os-palette-item${widget.from === "Prototype" ? " is-prototype" : ""}${tab ? " is-placed" : ""}` });
+        const item = root.createDiv({ cls: `life-os-palette-item${widget.from === "Prototype" ? " is-prototype" : ""}${tab ? " is-placed" : ""}`, attr: { "data-workflow": workflowOf(widget.id) } });
         const head = item.createDiv({ cls: "life-os-palette-item-head" });
         const grip = head.createSpan({ cls: "life-os-slot-handle" });
         setIcon(grip, "grip-vertical");
         head.createEl("strong", { text: widget.label });
         item.createDiv({ cls: "life-os-palette-desc", text: widget.desc });
-        item.createDiv({ cls: "life-os-palette-meta", text: tab ? `On ${onTabs.map((t) => t.label).join(", ")}` : widget.from === "Prototype" ? "Prototype" : `From ${widget.from}` });
+        item.createDiv({ cls: "life-os-palette-meta", text: `${WORKFLOWS.find((w) => w.id === workflowOf(widget.id))?.label} · ${tab ? `on ${onTabs.map((t) => t.label).join(", ")}` : widget.from === "Prototype" ? "prototype" : `from ${widget.from}`}` });
         makeDraggable(this, plugin, item, { kind: "widget", id: widget.id });
         if (current && !onTabs.includes(current)) {
           const add = item.createEl("button", { text: `Add to ${current.label}` });
@@ -3403,6 +3511,27 @@ module.exports = class LifeOSPlugin extends Plugin {
 
   setTabArea(id, area) {
     return this.changeLayout((layout) => { const tab = layout.tabs.find((t) => t.id === id); if (tab) { if (area) tab.area = area; else delete tab.area; } });
+  }
+
+  setTheme(patch) {
+    return this.changeLayout((layout) => { layout.theme = normalizeTheme({ ...(layout.theme || {}), ...patch }); });
+  }
+
+  setTabIcon(id, icon) {
+    return this.changeLayout((layout) => { const tab = layout.tabs.find((t) => t.id === id); if (tab) tab.icon = icon; });
+  }
+
+  // Puts a standard page back where it sits in the default layout (after the standard page before it).
+  restoreTab(id) {
+    const std = DEFAULT_LAYOUT.tabs.find((t) => t.id === id);
+    if (!std) return Promise.resolve();
+    return this.changeLayout((layout) => {
+      if (layout.tabs.some((t) => t.id === id)) return;
+      const order = DEFAULT_LAYOUT.tabs.map((t) => t.id);
+      let at = 0;
+      for (let i = order.indexOf(id) - 1; i >= 0; i--) { const j = layout.tabs.findIndex((t) => t.id === order[i]); if (j >= 0) { at = j + 1; break; } }
+      layout.tabs.splice(at, 0, JSON.parse(JSON.stringify(std)));
+    });
   }
 
   renameTab(id, label) {
