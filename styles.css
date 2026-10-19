@@ -1721,3 +1721,5 @@ body {
 .life-os-swatch.is-active { outline: 2px solid var(--sw); }
 .life-os-home[data-area] { background: linear-gradient(180deg, color-mix(in srgb, var(--life-os-accent) 9%, var(--background-primary)) 0, var(--background-primary) 420px); }
 .life-os-home[data-area] .life-os-module-header h1 { color: color-mix(in srgb, var(--life-os-accent) 75%, var(--text-normal)); }
+.life-os-rail-brand .is-long { letter-spacing: 0.06em; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.life-os-edit-theme input[type=text] { width: 14em; }

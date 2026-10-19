@@ -1,9 +1,9 @@
 {
-  "id": "life-os-app",
-  "name": "Life OS",
+  "id": "ex3c-agenda",
+  "name": "EX3C Agenda",
   "version": "0.20.0",
   "minAppVersion": "1.13.1",
-  "description": "A local-first home surface for planning, reflection, capture, and AI-assisted work.",
-  "author": "Life OS",
+  "description": "Tabs of widgets for planning, tasks, projects, study, review and capture, over plain Markdown notes.",
+  "author": "EX3C",
   "isDesktopOnly": false
 }
