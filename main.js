@@ -3342,6 +3342,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     this.drag = null;
     this.savingLayout = false;
     this.layout = normalizeLayout(null);
+    this.widgetCatalog = WIDGETS; // read by the Guide's Life OS UI map
     this.registerView("life-os-brain", (leaf) => new LifeOSBrainView(leaf));
     this.registerView(PALETTE_VIEW, (leaf) => new LifeOSWidgetPaletteView(leaf, this));
     this.registerView(
