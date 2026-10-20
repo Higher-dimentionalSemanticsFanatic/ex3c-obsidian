@@ -799,6 +799,12 @@ const WIDGETS = [
   "from": "Prototype"
  },
  {
+  "id": "proto.checklists",
+  "label": "Checklists",
+  "desc": "Reusable checklists (packing list, routines): progress, tick items, Reset to untick them for next time.",
+  "from": "Prototype"
+ },
+ {
   "id": "proto.courses",
   "label": "Courses",
   "desc": "Each course: exam countdown, next deadline, progress, this week's study time; then study deadlines in the next four weeks.",
@@ -818,11 +824,13 @@ const WIDGETS = [
  }
 ];
 const WIDGET_BY_ID = new Map(WIDGETS.map((widget) => [widget.id, widget]));
-const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["home.hero", "proto.capture", "home.setup", "home.now", "home.brain", "home.capture", "home.horizons", "home.signals"]}, {"id": "today", "label": "Today", "widgets": ["today.glance", "today.attention", "today.actions"]}, {"id": "plan", "label": "Plan", "widgets": ["proto.planner", "plan.horizons", "plan.actions"]}, {"id": "focus", "label": "Focus", "widgets": ["focus.groups", "focus.feed", "focus.commitments", "focus.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.effort", "review.areas", "review.habits", "review.week", "review.calendar", "review.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["projects.pulse", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "study", "label": "Study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence", "projects.pulse"], "area": "study"}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "brain", "label": "Unified Graph", "widgets": ["brain.graph"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
+const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["home.hero", "proto.capture", "home.setup", "home.now", "home.brain", "home.capture", "home.horizons", "home.signals"]}, {"id": "today", "label": "Today", "widgets": ["today.glance", "today.attention", "today.actions", "proto.checklists"]}, {"id": "plan", "label": "Plan", "widgets": ["proto.planner", "plan.horizons", "plan.actions"]}, {"id": "focus", "label": "Focus", "widgets": ["focus.groups", "focus.feed", "focus.commitments", "focus.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.effort", "review.areas", "review.habits", "review.week", "review.calendar", "review.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["projects.pulse", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "study", "label": "Study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence", "projects.pulse"], "area": "study"}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "brain", "label": "Unified Graph", "widgets": ["brain.graph"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
 const SIDE_WIDGETS = new Set(["home.brain"]);
 // Areas: a tab can be tied to one. A task belongs to an area by its #work/#study/#personal tag,
 // otherwise by the area property of the note it lives in (for example a project note's area: study).
 const AREAS = ["work", "study", "personal"];
+// The AI module counts as on while either of these exists (the Optional modules widget removes and restores them).
+const AI_MODULE_PATHS = ["Prompts", "00 Dashboards/Assistant.md"];
 const AREA_TAG_RE = /(^|\s)#(work|study|personal)(?=\s|$)/i;
 // Folders that hold no real tasks for the feed (templates, docs, prompts, settings, the knowledge layer).
 const TASK_EXCLUDED = ["Templates/", "scripts/", "wiki/", "Guide/", "Prompts/", "Meta/", ".trash/"];
@@ -844,7 +852,7 @@ const WORKFLOWS = [
 function workflowOf(id) {
   if (id.startsWith("user:")) return "yours";
   if (/^(proto\.capture|capture\.|home\.capture)/.test(id)) return "capture";
-  if (/^today\./.test(id) || /^home\.(signals|now)$/.test(id)) return "daily";
+  if (/^today\./.test(id) || /^home\.(signals|now)$/.test(id) || id === "proto.checklists") return "daily";
   if (/^(plan\.|proto\.planner|home\.horizons)/.test(id)) return "plan";
   if (/^focus\./.test(id)) return "tasks";
   if (/^(projects\.|proto\.(sequence|purchases|courses))/.test(id)) return "projects";
@@ -892,7 +900,8 @@ function normalizeLayout(raw) {
     tabs.push({ id, label: String(tab.label || id), ...(tab.icon ? { icon: String(tab.icon) } : {}), ...(area ? { area } : {}), widgets });
   }
   const appName = typeof source.appName === "string" ? source.appName.trim().slice(0, 40) : "";
-  return { tabs, theme: normalizeTheme(source.theme), ...(appName ? { appName } : {}) };
+  const modules = source.modules && typeof source.modules === "object" && !Array.isArray(source.modules) ? source.modules : null;
+  return { tabs, theme: normalizeTheme(source.theme), ...(appName ? { appName } : {}), ...(modules ? { modules } : {}) };
 }
 
 function makeDraggable(component, plugin, el, payload) {
@@ -1078,6 +1087,8 @@ class LifeOSHomeView extends ItemView {
       css.setProperty("--text-accent", `color-mix(in srgb, ${accent} 80%, var(--text-normal))`);
       if (tab?.area && theme.areaTint) root.setAttribute("data-area", tab.area); else root.removeAttribute("data-area");
     }
+    this.pageAccent = accent;
+    this.plugin.applyAccent?.();
     if (this.plugin.editing) root.addClass("is-editing");
     else root.removeClass?.("is-editing");
 
@@ -1233,7 +1244,7 @@ class LifeOSHomeView extends ItemView {
       }
     }
     // Standard pages belong to the built-in workflows: one you deleted can always be added back here.
-    const missing = DEFAULT_LAYOUT.tabs.filter((std) => !this.layout.tabs.some((tab) => tab.id === std.id));
+    const missing = DEFAULT_LAYOUT.tabs.filter((std) => !this.layout.tabs.some((tab) => tab.id === std.id) && (std.id !== "ai" || this.plugin.aiOn()));
     if (missing.length) {
       const stdRow = bar.createDiv({ cls: "life-os-edit-standard" });
       stdRow.createSpan({ text: "Standard pages you removed:" });
@@ -1254,7 +1265,7 @@ class LifeOSHomeView extends ItemView {
     nameRow.createSpan({ text: "Shown in the rail, the header and the tab title. Empty restores the default." });
     const theme = this.layout.theme || normalizeTheme(null);
     const themeRow = bar.createDiv({ cls: "life-os-edit-theme" });
-    themeRow.createSpan({ text: "Theme:" });
+    themeRow.createSpan({ text: "Theme (pages without an area):" });
     for (const [name, color] of Object.entries(THEME_PRESETS)) {
       const sw = themeRow.createEl("button", { cls: theme.preset === name ? "life-os-swatch is-active" : "life-os-swatch", attr: { title: name, "aria-label": `Theme ${name}`, style: `--sw:${color}` } });
       sw.type = "button";
@@ -1262,7 +1273,7 @@ class LifeOSHomeView extends ItemView {
       this.registerDomEvent(sw, "click", () => void this.plugin.setTheme({ preset: name }));
     }
     const areaColors = bar.createDiv({ cls: "life-os-edit-theme" });
-    areaColors.createSpan({ text: "Area colours:" });
+    areaColors.createSpan({ text: "Area colours (Work, Study, Personal pages and notes):" });
     for (const a of AREAS) {
       const lab = areaColors.createEl("label", { text: `${a[0].toUpperCase()}${a.slice(1)} ` });
       const input = lab.createEl("input", { attr: { type: "color", value: theme.areas[a], "aria-label": `${a} colour` } });
@@ -1315,6 +1326,7 @@ class LifeOSHomeView extends ItemView {
   }
 
   renderWidget(id, parent) {
+    if (!this.plugin.widgetShown(id)) return;
     const run = (action) => (action.command ? this.runCommand(action.command, action.label) : this.openPath(action.path));
     switch (id) {
       case "home.hero": return this.renderHero(parent);
@@ -1356,6 +1368,7 @@ class LifeOSHomeView extends ItemView {
       case "proto.planner": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/planner", { folders: [""], area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.sequence": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/sequence", { allProjects: true, area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture");`);
+      case "proto.checklists": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Checklists/views/checklists", { folder: "09 Checklists" });`);
       case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Study/views/courses");`);
       case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Modules/views/modules");`);
       case "proto.purchases": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/purchases", { currency: "EUR", area: ${JSON.stringify(this.tabArea())} });`);
@@ -1382,10 +1395,10 @@ class LifeOSHomeView extends ItemView {
     const status = hero.createDiv({ cls: "life-os-status-row" });
     this.addStatus(status, "shield-check", "Local-first", true);
     const aiReady = this.pluginLoaded("agent-client") && this.pluginLoaded("obsidian-local-rest-api");
-    this.addStatus(status, "sparkles", aiReady ? "AI tools loaded" : "AI unavailable", aiReady);
+    if (this.plugin.aiOn()) this.addStatus(status, "sparkles", aiReady ? "AI tools loaded" : "AI unavailable", aiReady);
     const heroActions = hero.createDiv({ cls: "life-os-hero-actions" });
     this.addButton(heroActions, { icon: "calendar-days", label: "Open today", description: "Start with the current day.", primary: true, onClick: () => this.runCommand("quickadd:choice:lifeos-daily", "Today’s note") });
-    this.addButton(heroActions, { icon: "sparkles", label: "Ask EX3C Agenda", description: "Open the governed AI workspace.", onClick: () => this.openPath("00 Dashboards/Assistant.md") });
+    if (this.plugin.aiOn()) this.addButton(heroActions, { icon: "sparkles", label: "Ask EX3C Agenda", description: "Open the governed AI workspace.", onClick: () => this.openPath("00 Dashboards/Assistant.md") });
   }
 
   renderBrainPreview(parent) {
@@ -1626,8 +1639,9 @@ class LifeOSHomeView extends ItemView {
     });
     const nav = rail.createEl("nav", { cls: "life-os-nav" });
     for (const tab of this.layout.tabs) {
+      if (!this.plugin.tabShown(tab)) continue;
       const active = this.activeScreen === tab.id;
-      const button = nav.createEl("button", { cls: active ? "life-os-nav-button is-active" : "life-os-nav-button", attr: { "aria-current": active ? "page" : "false", title: tab.label, "data-workflow": tabWorkflow(tab) } });
+      const button = nav.createEl("button", { cls: active ? "life-os-nav-button is-active" : "life-os-nav-button", attr: { "aria-current": active ? "page" : "false", title: tab.label, "data-workflow": tabWorkflow(tab), ...(tab.area ? { "data-area": tab.area, style: `--tab-accent:${themeAccent(this.layout.theme || normalizeTheme(null), tab.area)}` } : {}) } });
       button.type = "button";
       const icon = button.createSpan();
       setIcon(icon, tab.icon || TAB_ICONS[tab.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[tab.area] || "layout-grid");
@@ -2432,7 +2446,8 @@ class LifeOSHomeView extends ItemView {
     void sources;
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((file) => !TASK_EXCLUDED.some((folder) => file.path.startsWith(folder)));
+      .filter((file) => !TASK_EXCLUDED.some((folder) => file.path.startsWith(folder)))
+      .filter((file) => String(this.app.metadataCache.getFileCache(file)?.frontmatter?.type ?? "") !== "checklist"); // reusable checklists stay out of task views
     const today = moment().format("YYYY-MM-DD");
     const tasks = [];
     const exampleFiles = files.filter((file) => this.isExample(this.getFrontmatter(file)));
@@ -2701,25 +2716,45 @@ class LifeOSHomeView extends ItemView {
   renderSetupBanner(parent) {
     const setupPath = "00 Dashboards/Setup.md";
     const setupFile = this.app.vault.getAbstractFileByPath(setupPath);
-    const status = String(this.getFrontmatter(setupFile).status || "open").toLowerCase();
+    const fm = this.getFrontmatter(setupFile);
+    const status = String(fm.status || "open").toLowerCase();
     if (status === "done" || status === "complete" || status === "completed") {
       return;
     }
+    // sections are the Setup checklist's five tiers; the AI one counts as done while the AI module is removed
+    const SECTIONS = 5;
+    const marked = new Set((Array.isArray(fm.setup_sections_done) ? fm.setup_sections_done : []).map(Number).filter((n) => n >= 0 && n < SECTIONS));
+    if (!this.plugin.aiOn?.()) marked.add(3);
+    const done = marked.size, all = done === SECTIONS;
 
-    const banner = parent.createEl("section", { cls: "life-os-setup-banner" });
+    const banner = parent.createEl("section", { cls: all ? "life-os-setup-banner is-complete" : "life-os-setup-banner" });
     const icon = banner.createSpan({ cls: "life-os-setup-icon" });
-    setIcon(icon, "route");
+    setIcon(icon, all ? "check-circle-2" : "route");
     const copy = banner.createDiv();
-    copy.createEl("strong", { text: "Finish your EX3C Agenda setup" });
+    copy.createEl("strong", { text: all ? `${this.appName()} is set up` : "Finish your EX3C Agenda setup" });
     copy.createEl("p", {
-      text: "Complete the guided checklist before depending on automations or AI connections.",
+      text: all
+        ? "Every setup section is done. Finish to put this banner away; you can reopen setup from the Setup note."
+        : `${done} of ${SECTIONS} setup sections done.`,
     });
-    this.addButton(banner, {
-      icon: "arrow-right",
-      label: "Continue setup",
-      description: "Review the checklist.",
-      onClick: () => this.openPath(setupPath),
-    });
+    const bar = copy.createDiv({ cls: "life-os-setup-progress", attr: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(SECTIONS), "aria-valuenow": String(done) } });
+    bar.createDiv({ attr: { style: `width:${(100 * done) / SECTIONS}%` } });
+    if (all && setupFile) {
+      this.addButton(banner, {
+        icon: "check",
+        label: "Finish setup",
+        description: "Mark setup done.",
+        primary: true,
+        onClick: () => void this.app.fileManager.processFrontMatter(setupFile, (f) => { f.status = "done"; }),
+      });
+    } else {
+      this.addButton(banner, {
+        icon: "arrow-right",
+        label: "Continue setup",
+        description: "Review the checklist.",
+        onClick: () => this.openPath(setupPath),
+      });
+    }
   }
 
   getSystemStats() {
@@ -2763,11 +2798,11 @@ class LifeOSHomeView extends ItemView {
         value: typeCount(["post", "video-script", "review"]),
         label: "Creative notes",
       },
-      {
+      ...(this.plugin.aiOn() ? [{
         icon: "sparkles",
         value: aiReady ? "Loaded" : "Unavailable",
         label: "AI tools",
-      },
+      }] : []),
     ];
   }
 
@@ -3021,7 +3056,7 @@ class LifeOSBrainRenderer extends Component {
     if (/^(03 Planning|04 Projects)\//.test(path)) return "direction";
     if (/^(01 Journal|02 Retreats)\//.test(path)) return "memory";
     if (path.startsWith("05 People/")) return "people";
-    if (/^(06 Writing|07 Library|09 Reading|wiki|inbox)\//.test(path)) return "knowledge";
+    if (/^(06 Writing|07 Library|09 Reading|wiki|inbox|Inbox \(uncategorised\))\//.test(path)) return "knowledge";
     return "practice";
   }
   clearHover() {
@@ -3328,7 +3363,7 @@ class LifeOSWidgetPaletteView extends ItemView {
     const where = new Map();
     for (const tab of plugin.layout.tabs) for (const id of tab.widgets) where.set(id, [...(where.get(id) || []), tab]);
     const q = this.query.trim().toLowerCase();
-    const matches = WIDGETS.filter((w) => !q || `${w.label} ${w.desc} ${w.from}`.toLowerCase().includes(q));
+    const matches = WIDGETS.filter((w) => plugin.widgetShown(w.id)).filter((w) => !q || `${w.label} ${w.desc} ${w.from}`.toLowerCase().includes(q));
     const groups = [
       ["Not on a tab", matches.filter((w) => !where.has(w.id))],
       ["On a tab", matches.filter((w) => where.has(w.id))],
@@ -3428,9 +3463,28 @@ module.exports = class LifeOSPlugin extends Plugin {
       this.addCommand({
         id: `open-${item.id}`,
         name: `Open EX3C Agenda ${item.label}`,
-        callback: () => this.activateView(item.id),
+        checkCallback: (checking) => {
+          if (item.id === "ai" && !this.aiOn()) return false;
+          if (!checking) void this.activateView(item.id);
+          return true;
+        },
       });
     }
+
+    // Optional modules: while the AI module is removed (no Prompts/ and no Assistant dashboard),
+    // every AI entry point hides: app buttons and widgets, the AI page, and prompt buttons in notes.
+    const moduleChanged = (file, oldPath = "") => {
+      if (![file.path, oldPath].some((p) => AI_MODULE_PATHS.some((m) => p === m || p.startsWith(`${m}/`)))) return;
+      window.clearTimeout(this.moduleTimer);
+      this.moduleTimer = window.setTimeout(() => this.syncModuleState(), 300);
+    };
+    for (const kind of ["create", "delete", "rename"]) this.registerEvent(this.app.vault.on(kind, moduleChanged));
+    this.register(() => document.body.removeClass("ex3c-ai-off"));
+    const accentSoon = () => { window.clearTimeout(this.accentTimer); this.accentTimer = window.setTimeout(() => this.applyAccent(), 50); };
+    this.registerEvent(this.app.workspace.on("active-leaf-change", accentSoon));
+    this.registerEvent(this.app.workspace.on("file-open", accentSoon));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => { if (file === this.app.workspace.getActiveFile()) accentSoon(); }));
+    this.register(() => { for (const k of ["--accent-h", "--accent-s", "--accent-l"]) document.body.style.removeProperty(k); });
 
     this.app.workspace.onLayoutReady(async () => {
       try {
@@ -3438,7 +3492,56 @@ module.exports = class LifeOSPlugin extends Plugin {
       } catch (error) {
         console.error("EX3C Agenda could not load its layout; using the default tabs.", error);
       }
+      this.syncModuleState(false);
+      this.applyAccent();
       void this.activateView();
+    });
+  }
+
+  // The app's colour rule reaches Obsidian too: the accent is the app page's colour while the app is in front,
+  // the area colour for a note with area: work/study/personal, and the Theme colour for any other note.
+  accentFor(leaf) {
+    const theme = this.layout.theme || normalizeTheme(null);
+    const view = leaf?.view;
+    if (view?.getViewType?.() === VIEW_TYPE && view.pageAccent) return view.pageAccent;
+    const file = view?.file;
+    const area = file ? String(this.app.metadataCache.getFileCache(file)?.frontmatter?.area ?? "").toLowerCase() : "";
+    return themeAccent(theme, AREAS.includes(area) ? area : null);
+  }
+
+  applyAccent() {
+    const hex = this.accentFor(this.app.workspace.getMostRecentLeaf?.() || this.app.workspace.activeLeaf);
+    if (!HEX.test(hex)) return;
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, dlt = max - min;
+    const s = dlt ? dlt / (1 - Math.abs(2 * l - 1)) : 0;
+    const h = !dlt ? 0 : max === r ? 60 * (((g - b) / dlt) % 6) : max === g ? 60 * ((b - r) / dlt + 2) : 60 * ((r - g) / dlt + 4);
+    const st = document.body.style;
+    st.setProperty("--accent-h", String(Math.round((h + 360) % 360)));
+    st.setProperty("--accent-s", `${Math.round(s * 100)}%`);
+    st.setProperty("--accent-l", `${Math.round(l * 100)}%`);
+  }
+
+  aiOn() {
+    return AI_MODULE_PATHS.some((p) => this.app.vault.getAbstractFileByPath(p));
+  }
+
+  syncModuleState(refresh = true) {
+    const off = !this.aiOn();
+    const was = document.body.hasClass("ex3c-ai-off");
+    document.body.toggleClass("ex3c-ai-off", off);
+    if (refresh && was !== off) { this.refreshViews(); this.refreshPalettes(); }
+  }
+
+  widgetShown(id) { return !id.startsWith("ai.") || this.aiOn(); }
+  tabShown(tab) { return tab.id !== "ai" || this.aiOn(); }
+
+  // Optional modules widget: what a removed module took away, so Restore can put it back.
+  setModuleRecord(id, record) {
+    return this.changeLayout((layout) => {
+      layout.modules = { ...(layout.modules || {}) };
+      if (record) layout.modules[id] = record; else delete layout.modules[id];
+      if (!Object.keys(layout.modules).length) delete layout.modules;
     });
   }
 
@@ -3542,7 +3645,7 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
 
   setTheme(patch) {
-    return this.changeLayout((layout) => { layout.theme = normalizeTheme({ ...(layout.theme || {}), ...patch }); });
+    return this.changeLayout((layout) => { layout.theme = normalizeTheme({ ...(layout.theme || {}), ...patch }); }).then(() => this.applyAccent());
   }
 
   setTabIcon(id, icon) {

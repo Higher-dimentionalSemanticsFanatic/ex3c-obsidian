@@ -6,7 +6,7 @@
   background:
     radial-gradient(
       circle at 82% 0%,
-      color-mix(in srgb, #ff6b3d 11%, transparent),
+      color-mix(in srgb, var(--life-os-accent, #bb876e) 11%, transparent),
       transparent 34rem
     ),
     var(--background-primary);
@@ -1707,8 +1707,10 @@ body {
 .life-os-widget-slot.is-editing { border-left: 4px solid var(--wf); }
 .life-os-wf-chip { font-size: 11px; padding: 0 7px; border-radius: 8px; background: color-mix(in srgb, var(--wf) 22%, transparent); color: var(--text-normal); margin-left: 6px; }
 .life-os-palette-item[data-workflow] { border-left: 4px solid var(--wf); }
-.life-os-nav-button[data-workflow] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--wf) 70%, transparent); }
-.life-os-nav-button[data-workflow].is-active { box-shadow: inset 4px 0 0 var(--wf); }
+/* Rail: an area page shows its area colour; workflow colours show only while editing the layout */
+.life-os-home .life-os-nav-button[data-area] { box-shadow: inset 3px 0 0 var(--tab-accent); }
+.life-os-home .life-os-nav-button.is-active { box-shadow: inset 4px 0 0 var(--life-os-accent); }
+.life-os-home.is-editing .life-os-nav-button[data-workflow] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--wf) 70%, transparent); }
 .life-os-edit-icons, .life-os-edit-standard { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0; font-size: 12px; }
 .life-os-edit-icons .clickable-icon.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
 .life-os-edit-standard button { border-left: 4px solid var(--wf); }
@@ -1722,7 +1724,7 @@ body {
 .life-os-swatch { font-size: 11px; padding: 2px 8px 2px 6px; border-left: 12px solid var(--sw) !important; }
 .life-os-swatch.is-active { outline: 2px solid var(--sw); }
 .life-os-home[data-area] { background: linear-gradient(180deg, color-mix(in srgb, var(--life-os-accent) 9%, var(--background-primary)) 0, var(--background-primary) 420px); }
-.life-os-home[data-area] .life-os-module-header h1 { color: color-mix(in srgb, var(--life-os-accent) 75%, var(--text-normal)); }
+.life-os-home .life-os-module-header h1 { color: color-mix(in srgb, var(--life-os-accent) 75%, var(--text-normal)); }
 .life-os-rail-brand .is-long { letter-spacing: 0.06em; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .life-os-edit-theme input[type=text] { width: 14em; }
 
@@ -1734,3 +1736,17 @@ body {
 .life-os-rail-brand > span.is-long { font-size: 0.95rem; letter-spacing: -0.02em; }
 .life-os-identity h1 { letter-spacing: -0.015em; line-height: 1; }
 .life-os-topbar-context > span:first-child { letter-spacing: 0.02em; }
+
+/* AI module removed: hide AI buttons in notes (Agent Client prompt buttons) and its floating button */
+body.ex3c-ai-off .block-language-agent,
+body.ex3c-ai-off pre:has(> code.language-agent),
+body.ex3c-ai-off .el-pre:has(code.language-agent),
+body.ex3c-ai-off .cm-preview-code-block:has(> .block-language-agent),
+body.ex3c-ai-off .cm-embed-block:has(.block-language-agent),
+body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; }
+
+/* Setup banner progress */
+.life-os-setup-progress { height: 6px; border-radius: 3px; background: var(--background-modifier-border); overflow: hidden; margin-top: 8px; max-width: 320px; }
+.life-os-setup-progress > div { height: 100%; background: var(--life-os-accent); }
+.life-os-setup-banner.is-complete .life-os-setup-icon { color: var(--color-green); }
+.life-os-setup-banner.is-complete .life-os-setup-progress > div { background: var(--color-green); }
