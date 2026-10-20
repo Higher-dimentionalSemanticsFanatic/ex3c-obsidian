@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Name shown as EX3C AgendA; Home slogan "Executive function Operationalized".
 - One colour rule: each page uses its area colour (Work, Study, Personal) or else the Theme colour, the same way everywhere: page title, background glow, active rail item, charts. Area pages are marked in the rail with their colour; workflow colours show only while editing. Obsidian's accent follows the page or note in front (a note with `area: work` takes the Work colour).
 - Optional modules: while the AI module is removed, every AI entry point hides (Home status and Ask button, AI page and command, AI widgets, prompt buttons in notes). Remove records where everything went, so Restore can put it back.
 - Setup banner shows progress by Setup section and offers Finish setup once every section is done.

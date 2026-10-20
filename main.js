@@ -189,7 +189,7 @@ const PERIOD_ACTIONS = [
 const DESTINATIONS = [
   {
     icon: "layout-dashboard",
-    label: "EX3C Agenda",
+    label: "EX3C AgendA",
     description: "Direction, habits, questions, and life wheel.",
     path: "00 Dashboards/Dashboard.md",
   },
@@ -279,7 +279,7 @@ const MODULES = {
     actions: [
       {
         icon: "compass",
-        label: "EX3C Agenda",
+        label: "EX3C AgendA",
         description: "Return to the whole-life overview.",
         path: "00 Dashboards/Dashboard.md",
       },
@@ -461,7 +461,7 @@ const MODULES = {
       {
         icon: "sun",
         label: "What matters today",
-        description: "Open the EX3C Agenda brief and daily context.",
+        description: "Open the EX3C AgendA brief and daily context.",
         path: "00 Dashboards/Dashboard.md",
       },
       {
@@ -520,7 +520,7 @@ const COLLECTIONS = {
 const LAYOUT_PATH = "Meta/EX3C Agenda Layout.md";
 const LAYOUT_SEED_PATH = "Prototypes/EX3C Agenda Layout/Layout.md";
 // The name shown in the app (rail, header, tab title). You can change it in Configure; it is saved in the layout note.
-const DEFAULT_APP_NAME = "EX3C Agenda";
+const DEFAULT_APP_NAME = "EX3C AgendA";
 // Your own widgets: every .js file in this folder is a DataviewJS view that shows up in the Widgets panel.
 const USER_WIDGET_DIR = "Meta/widgets";
 const LAYOUT_JSON_RE = /```json\n([\s\S]*?)\n```/;
@@ -529,20 +529,20 @@ const LAYOUT_NOTE_HEADER = `---
 tags:
   - life-os
 ---
-# EX3C Agenda layout
-EX3C Agenda builds its tabs from the json block below: each tab has an id, a label, and its widgets in order. Edit it with Configure in EX3C Agenda (drag and drop), or by hand here. Widgets not in any tab wait in the Widgets panel.
+# EX3C AgendA layout
+EX3C AgendA builds its tabs from the json block below: each tab has an id, a label, and its widgets in order. Edit it with Configure in EX3C AgendA (drag and drop), or by hand here. Widgets not in any tab wait in the Widgets panel.
 
 `;
 const WIDGETS = [
  {
   "id": "home.hero",
-  "label": "Header: Open today, Ask EX3C Agenda",
+  "label": "Header: Open today, Ask EX3C AgendA",
   "desc": "Date, Local-first and AI status chips, two buttons.",
   "from": "Home"
  },
  {
   "id": "home.setup",
-  "label": "Finish your EX3C Agenda setup",
+  "label": "Finish your EX3C AgendA setup",
   "desc": "Banner until Setup's status property says done.",
   "from": "Home"
  },
@@ -627,7 +627,7 @@ const WIDGETS = [
  {
   "id": "focus.actions",
   "label": "Open and act",
-  "desc": "EX3C Agenda, Task recommendations, Project momentum, Habit signals.",
+  "desc": "EX3C AgendA, Task recommendations, Project momentum, Habit signals.",
   "from": "Focus"
  },
  {
@@ -941,7 +941,7 @@ class LifeOSCaptureModal extends Modal {
     root.addClass("life-os-capture-modal");
     root.createEl("h2", { text: "Capture" });
     root.createEl("p", {
-      text: "Choose what this is. EX3C Agenda will route it to the right place.",
+      text: "Choose what this is. EX3C AgendA will route it to the right place.",
     });
 
     const groups = [
@@ -1178,7 +1178,7 @@ class LifeOSHomeView extends ItemView {
     try {
       this.renderWidget(id, body);
     } catch (error) {
-      console.error(`EX3C Agenda widget ${id}`, error);
+      console.error(`EX3C AgendA widget ${id}`, error);
       body.createDiv({ cls: "life-os-live-empty", text: `${meta?.label || id} could not be drawn: ${error.message}` });
     }
   }
@@ -1301,7 +1301,7 @@ class LifeOSHomeView extends ItemView {
     button("Widgets panel", () => void this.plugin.openPalette());
     button("Open layout note", async () => { await this.plugin.saveLayout(); void this.openPath(LAYOUT_PATH); });
     button("Reset to defaults", () => {
-      if (window.confirm("Replace your layout with the default EX3C Agenda tabs?")) void this.plugin.resetLayout();
+      if (window.confirm("Replace your layout with the default EX3C AgendA tabs?")) void this.plugin.resetLayout();
     });
     button("Done", () => void this.plugin.setEditing(false), true);
   }
@@ -1390,7 +1390,7 @@ class LifeOSHomeView extends ItemView {
     setIcon(mark, "calendar-check-2");
     const words = identity.createDiv();
     words.createEl("h1", { text: this.appName() });
-    words.createEl("p", { text: "See clearly. Choose deliberately. Live fully." });
+    words.createEl("p", { text: "Executive function Operationalized" });
     hero.createDiv({ cls: "life-os-date", text: moment().format("dddd DD-MM-YYYY") });
     const status = hero.createDiv({ cls: "life-os-status-row" });
     this.addStatus(status, "shield-check", "Local-first", true);
@@ -1398,7 +1398,7 @@ class LifeOSHomeView extends ItemView {
     if (this.plugin.aiOn()) this.addStatus(status, "sparkles", aiReady ? "AI tools loaded" : "AI unavailable", aiReady);
     const heroActions = hero.createDiv({ cls: "life-os-hero-actions" });
     this.addButton(heroActions, { icon: "calendar-days", label: "Open today", description: "Start with the current day.", primary: true, onClick: () => this.runCommand("quickadd:choice:lifeos-daily", "Today’s note") });
-    if (this.plugin.aiOn()) this.addButton(heroActions, { icon: "sparkles", label: "Ask EX3C Agenda", description: "Open the governed AI workspace.", onClick: () => this.openPath("00 Dashboards/Assistant.md") });
+    if (this.plugin.aiOn()) this.addButton(heroActions, { icon: "sparkles", label: "Ask EX3C AgendA", description: "Open the governed AI workspace.", onClick: () => this.openPath("00 Dashboards/Assistant.md") });
   }
 
   renderBrainPreview(parent) {
@@ -1445,7 +1445,7 @@ class LifeOSHomeView extends ItemView {
     setIcon(icon, "shield-check");
     const copy = note.createDiv();
     copy.createEl("strong", { text: "AI-managed, human-authorized" });
-    copy.createEl("p", { text: "EX3C Agenda can retrieve, summarize, and draft. Review context before sending. Human approval is the operating policy, not a guarantee enforced across every connected tool." });
+    copy.createEl("p", { text: "EX3C AgendA can retrieve, summarize, and draft. Review context before sending. Human approval is the operating policy, not a guarantee enforced across every connected tool." });
   }
 
   renderDataviewWidget(parent, code) {
@@ -1738,7 +1738,7 @@ class LifeOSHomeView extends ItemView {
       const emptyCopy = empty.createDiv();
       emptyCopy.createEl("strong", { text: "Create today’s note" });
       emptyCopy.createEl("p", {
-        text: "EX3C Agenda will use your configured questions and habits.",
+        text: "EX3C AgendA will use your configured questions and habits.",
       });
       this.addButton(empty, {
         icon: "plus",
@@ -2171,7 +2171,7 @@ class LifeOSHomeView extends ItemView {
       const flow = section.createEl("section", { cls: "life-os-connection-map", attr: { "aria-label": "AI integration map" } });
       flow.createEl("h3", { text: "How the parts connect" });
       const diagram = flow.createDiv({ cls: "life-os-ai-diagram" });
-      diagram.createDiv({ cls: "life-os-ai-node", text: "EX3C Agenda · local dashboard" });
+      diagram.createDiv({ cls: "life-os-ai-node", text: "EX3C AgendA · local dashboard" });
       diagram.createDiv({ cls: "life-os-ai-connector", text: "Selected context →" });
       const hub = diagram.createDiv({ cls: "life-os-ai-node", text: `Agent Client · ${agentConfigured ? "configured" : agentLoaded ? "loaded, configuration needed" : "unavailable"}` });
       hub.createDiv({ text: "Two separate integration paths ↓" });
@@ -2731,7 +2731,7 @@ class LifeOSHomeView extends ItemView {
     const icon = banner.createSpan({ cls: "life-os-setup-icon" });
     setIcon(icon, all ? "check-circle-2" : "route");
     const copy = banner.createDiv();
-    copy.createEl("strong", { text: all ? `${this.appName()} is set up` : "Finish your EX3C Agenda setup" });
+    copy.createEl("strong", { text: all ? `${this.appName()} is set up` : "Finish your EX3C AgendA setup" });
     copy.createEl("p", {
       text: all
         ? "Every setup section is done. Finish to put this banner away; you can reopen setup from the Setup note."
@@ -2879,7 +2879,7 @@ class LifeOSHomeView extends ItemView {
     const file = this.app.vault.getAbstractFileByPath(path);
 
     if (!(file instanceof TFile)) {
-      new Notice(`EX3C Agenda could not find ${path}.`);
+      new Notice(`EX3C AgendA could not find ${path}.`);
       return;
     }
 
@@ -2933,7 +2933,7 @@ class LifeOSBrainRenderer extends Component {
     ];
   }
   getViewType() { return "life-os-brain"; }
-  getDisplayText() { return "EX3C Agenda Brain"; }
+  getDisplayText() { return "EX3C AgendA Brain"; }
   getIcon() { return "brain"; }
   async onOpen() {
     const root = this.contentEl;
@@ -3317,7 +3317,7 @@ class LifeOSBrainView extends ItemView {
     this.addChild(this.renderer);
   }
   getViewType() { return "life-os-brain"; }
-  getDisplayText() { return "EX3C Agenda Brain"; }
+  getDisplayText() { return "EX3C AgendA Brain"; }
   getIcon() { return "brain"; }
   async onClose() { if (this.renderer) this.removeChild(this.renderer); this.renderer = null; }
 }
@@ -3329,7 +3329,7 @@ class LifeOSWidgetPaletteView extends ItemView {
     this.query = "";
   }
   getViewType() { return PALETTE_VIEW; }
-  getDisplayText() { return "EX3C Agenda widgets"; }
+  getDisplayText() { return "EX3C AgendA widgets"; }
   getIcon() { return "layout-grid"; }
   async onOpen() { this.render(); }
   async onClose() { this.contentEl.empty(); }
@@ -3343,8 +3343,8 @@ class LifeOSWidgetPaletteView extends ItemView {
     const current = plugin.currentTab();
     root.createEl("h3", { text: "Widgets" });
     root.createEl("p", { cls: "life-os-palette-help", text: plugin.editing
-      ? "Drag a widget onto a tab in EX3C Agenda, or into the page where it should go. A widget can sit on several tabs. Drop a widget from the page here to take it off that tab."
-      : "Press Edit layout to rearrange EX3C Agenda. You can also drag a widget into EX3C Agenda while editing." });
+      ? "Drag a widget onto a tab in EX3C AgendA, or into the page where it should go. A widget can sit on several tabs. Drop a widget from the page here to take it off that tab."
+      : "Press Edit layout to rearrange EX3C AgendA. You can also drag a widget into EX3C AgendA while editing." });
     const actions = root.createDiv({ cls: "life-os-palette-actions" });
     const edit = actions.createEl("button", { text: plugin.editing ? "Done editing" : "Edit layout", cls: plugin.editing ? "mod-cta" : "" });
     edit.type = "button";
@@ -3398,7 +3398,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     this.drag = null;
     this.savingLayout = false;
     this.layout = normalizeLayout(null);
-    this.widgetCatalog = WIDGETS; // read by the Guide's EX3C Agenda UI map
+    this.widgetCatalog = WIDGETS; // read by the Guide's EX3C AgendA UI map
     this.registerView("life-os-brain", (leaf) => new LifeOSBrainView(leaf));
     this.registerView(PALETTE_VIEW, (leaf) => new LifeOSWidgetPaletteView(leaf, this));
     this.registerView(
@@ -3406,19 +3406,19 @@ module.exports = class LifeOSPlugin extends Plugin {
       (leaf) => new LifeOSHomeView(leaf, this)
     );
 
-    this.addRibbonIcon("calendar-check-2", "Open EX3C Agenda", () => {
+    this.addRibbonIcon("calendar-check-2", "Open EX3C AgendA", () => {
       void this.activateView();
     });
 
     this.addCommand({
       id: "open-home",
-      name: "Open EX3C Agenda home",
+      name: "Open EX3C AgendA home",
       callback: () => this.activateView("home"),
     });
 
     this.addCommand({
       id: "open-capture",
-      name: "Open EX3C Agenda capture",
+      name: "Open EX3C AgendA capture",
       callback: () => this.openCapture(),
     });
 
@@ -3430,13 +3430,13 @@ module.exports = class LifeOSPlugin extends Plugin {
 
     this.addCommand({
       id: "edit-layout",
-      name: "Edit EX3C Agenda layout",
+      name: "Edit EX3C AgendA layout",
       callback: () => this.setEditing(!this.editing),
     });
 
     this.addCommand({
       id: "open-widgets",
-      name: "Open EX3C Agenda widgets panel",
+      name: "Open EX3C AgendA widgets panel",
       callback: () => this.openPalette(),
     });
 
@@ -3462,7 +3462,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     for (const item of NAV_ITEMS.filter((item) => item.id !== "home")) {
       this.addCommand({
         id: `open-${item.id}`,
-        name: `Open EX3C Agenda ${item.label}`,
+        name: `Open EX3C AgendA ${item.label}`,
         checkCallback: (checking) => {
           if (item.id === "ai" && !this.aiOn()) return false;
           if (!checking) void this.activateView(item.id);
@@ -3490,7 +3490,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       try {
         await this.loadLayout();
       } catch (error) {
-        console.error("EX3C Agenda could not load its layout; using the default tabs.", error);
+        console.error("EX3C AgendA could not load its layout; using the default tabs.", error);
       }
       this.syncModuleState(false);
       this.applyAccent();
@@ -3578,7 +3578,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     let raw = null;
     if (text) {
       try { raw = JSON.parse(text.match(LAYOUT_JSON_RE)?.[1] ?? ""); }
-      catch (error) { new Notice("EX3C Agenda: the layout note's json block could not be read, so the default tabs are shown."); }
+      catch (error) { new Notice("EX3C AgendA: the layout note's json block could not be read, so the default tabs are shown."); }
     }
     this.layout = normalizeLayout(raw);
   }
@@ -3594,7 +3594,7 @@ module.exports = class LifeOSPlugin extends Plugin {
         await this.app.vault.create(LAYOUT_PATH, `${LAYOUT_NOTE_HEADER}${block}\n`);
       }
     } catch (error) {
-      new Notice(`EX3C Agenda could not save the layout: ${error.message}`);
+      new Notice(`EX3C AgendA could not save the layout: ${error.message}`);
     } finally {
       window.setTimeout(() => { this.savingLayout = false; }, 600);
     }
