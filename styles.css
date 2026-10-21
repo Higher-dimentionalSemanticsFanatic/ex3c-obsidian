@@ -1750,3 +1750,7 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .life-os-setup-progress > div { height: 100%; background: var(--life-os-accent); }
 .life-os-setup-banner.is-complete .life-os-setup-icon { color: var(--color-green); }
 .life-os-setup-banner.is-complete .life-os-setup-progress > div { background: var(--color-green); }
+
+/* Agent Client buttons while the AI module is removed (see hideAgentBlocks) */
+.ex3c-agent-hidden { display: none; }
+.markdown-preview-view .block-language-agent.ex3c-agent-hidden, .cm-preview-code-block:has(> .ex3c-agent-hidden) { display: none; }

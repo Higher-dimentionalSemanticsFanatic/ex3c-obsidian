@@ -1,6 +1,7 @@
 const {
   Component,
   ItemView,
+  MarkdownPreviewRenderer,
   Modal,
   Notice,
   Plugin,
@@ -799,6 +800,12 @@ const WIDGETS = [
   "from": "Prototype"
  },
  {
+  "id": "proto.projectboard",
+  "label": "Projects board",
+  "desc": "Every project note as a card in the column of its status (Idea, Active, Paused, Done); drag or pick a status to change it; + Idea makes a new project note.",
+  "from": "Prototype"
+ },
+ {
   "id": "proto.checklists",
   "label": "Checklists",
   "desc": "Reusable checklists (packing list, routines): progress, tick items, Reset to untick them for next time.",
@@ -824,13 +831,19 @@ const WIDGETS = [
  }
 ];
 const WIDGET_BY_ID = new Map(WIDGETS.map((widget) => [widget.id, widget]));
-const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["home.hero", "proto.capture", "home.setup", "home.now", "home.brain", "home.capture", "home.horizons", "home.signals"]}, {"id": "today", "label": "Today", "widgets": ["today.glance", "today.attention", "today.actions", "proto.checklists"]}, {"id": "plan", "label": "Plan", "widgets": ["proto.planner", "plan.horizons", "plan.actions"]}, {"id": "focus", "label": "Focus", "widgets": ["focus.groups", "focus.feed", "focus.commitments", "focus.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.effort", "review.areas", "review.habits", "review.week", "review.calendar", "review.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["projects.pulse", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "study", "label": "Study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence", "projects.pulse"], "area": "study"}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "brain", "label": "Unified Graph", "widgets": ["brain.graph"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
+const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["proto.capture", "home.setup", "today.attention", "proto.planner", "proto.checklists"]}, {"id": "today", "label": "Check-in", "icon": "moon", "widgets": ["today.glance", "today.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["proto.projectboard", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "study", "label": "Study", "area": "study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "proto.purchases"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.week", "review.effort", "review.habits", "review.areas", "review.calendar", "plan.horizons", "review.actions"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
+// Widgets every layout saved before 21-10-2026 already knew about (the default of that time, minus the capture box,
+// which never reached saved layouts). A widget added to the default later is put on the saved layout's matching tab once.
+const LEGACY_KNOWN = ["ai.actions", "ai.control", "ai.diagram", "ai.principle", "ai.system", "brain.graph", "focus.actions", "focus.commitments", "focus.feed", "focus.groups", "home.brain", "home.capture", "home.hero", "home.horizons", "home.now", "home.setup", "home.signals", "library.actions", "library.shelf", "people.actions", "people.directory", "people.discuss", "plan.actions", "plan.horizons", "projects.actions", "projects.pulse", "proto.checklists", "proto.courses", "proto.planner", "proto.projectboard", "proto.purchases", "proto.sequence", "review.actions", "review.areas", "review.calendar", "review.effort", "review.habits", "review.week", "today.actions", "today.attention", "today.glance"];
 const SIDE_WIDGETS = new Set(["home.brain"]);
 // Areas: a tab can be tied to one. A task belongs to an area by its #work/#study/#personal tag,
 // otherwise by the area property of the note it lives in (for example a project note's area: study).
 const AREAS = ["work", "study", "personal"];
 // The AI module counts as on while either of these exists (the Optional modules widget removes and restores them).
 const AI_MODULE_PATHS = ["Prompts", "00 Dashboards/Assistant.md"];
+// Optional modules the workflow canvas shows: each counts as removed when none of its paths are left.
+const MAP_MODULE_PATHS = { ai: AI_MODULE_PATHS, retreats: ["02 Retreats"], writing: ["06 Writing"] };
+const WORKFLOW_CANVAS = "Guide/Workflow Map.canvas";
 const AREA_TAG_RE = /(^|\s)#(work|study|personal)(?=\s|$)/i;
 // Folders that hold no real tasks for the feed (templates, docs, prompts, settings, the knowledge layer).
 const TASK_EXCLUDED = ["Templates/", "scripts/", "wiki/", "Guide/", "Prompts/", "Meta/", ".trash/"];
@@ -855,7 +868,7 @@ function workflowOf(id) {
   if (/^today\./.test(id) || /^home\.(signals|now)$/.test(id) || id === "proto.checklists") return "daily";
   if (/^(plan\.|proto\.planner|home\.horizons)/.test(id)) return "plan";
   if (/^focus\./.test(id)) return "tasks";
-  if (/^(projects\.|proto\.(sequence|purchases|courses))/.test(id)) return "projects";
+  if (/^(projects\.|proto\.(sequence|purchases|courses|projectboard))/.test(id)) return "projects";
   if (/^review\./.test(id)) return "review";
   if (/^people\./.test(id)) return "people";
   if (/^(create|library)\./.test(id)) return "writing";
@@ -901,7 +914,8 @@ function normalizeLayout(raw) {
   }
   const appName = typeof source.appName === "string" ? source.appName.trim().slice(0, 40) : "";
   const modules = source.modules && typeof source.modules === "object" && !Array.isArray(source.modules) ? source.modules : null;
-  return { tabs, theme: normalizeTheme(source.theme), ...(appName ? { appName } : {}), ...(modules ? { modules } : {}) };
+  const known = Array.isArray(source.known) ? source.known.map(String) : null;
+  return { tabs, theme: normalizeTheme(source.theme), ...(appName ? { appName } : {}), ...(modules ? { modules } : {}), ...(known ? { known } : {}) };
 }
 
 function makeDraggable(component, plugin, el, payload) {
@@ -1367,7 +1381,8 @@ class LifeOSHomeView extends ItemView {
       case "capture.create": return this.renderActionSection(parent, "Create notes", "New notes from their templates.", CAPTURE_MENU_ACTIONS.slice(8), run);
       case "proto.planner": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/planner", { folders: [""], area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.sequence": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/sequence", { allProjects: true, area: ${JSON.stringify(this.tabArea())} });`);
-      case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture");`);
+      case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture", { area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.projectboard": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Projects/views/board", { area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.checklists": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Checklists/views/checklists", { folder: "09 Checklists" });`);
       case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Study/views/courses");`);
       case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Modules/views/modules");`);
@@ -2389,11 +2404,16 @@ class LifeOSHomeView extends ItemView {
     const scheduled = raw.match(/⏳\s*(\d{4}-\d{2}-\d{2})/)?.[1] || "";
     const overdue = Boolean(due && due < today);
     const dueToday = due === today;
+    // due within the next 3 days counts as urgent, here and in the planner's suggestions
+    const dueSoon = Boolean(due && due > today && due <= moment(today).add(3, "days").format("YYYY-MM-DD"));
     const scheduledToday = scheduled === today;
     const high = raw.includes("⏫") || raw.includes("🔺");
     const discuss = /(^|\s)#discuss(?:\s|$)/.test(raw);
     const text = raw
       .replace(/\s*[🛫⏳📅✅❌➕]\s*\d{4}-\d{2}-\d{2}/gu, "")
+      .replace(/\s*\[[\w-]+::[^\]]*\]/g, "")
+      .replace(/\s*(?:🆔|⛔)\s*[\w-]+(?:\s*,\s*[\w-]+)*/gu, "")
+      .replace(/\s*🔁[^📅⏳🛫➕✅❌🔺⏫🔼🔽⏬#^]*/u, " ")
       .replace(/\s*[🔺⏫🔼🔽⏬]/gu, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -2403,6 +2423,7 @@ class LifeOSHomeView extends ItemView {
       scheduled,
       overdue,
       dueToday,
+      dueSoon,
       scheduledToday,
       high,
       discuss,
@@ -2532,11 +2553,13 @@ class LifeOSHomeView extends ItemView {
             ? 0
             : task.dueToday || task.scheduledToday
               ? 1
-              : task.high
+              : task.dueSoon
                 ? 2
-                : task.due || task.scheduled
+                : task.high
                   ? 3
-                  : 4;
+                  : task.due || task.scheduled
+                    ? 4
+                    : 5;
         const sortDate = (task) => task.due || task.scheduled || "9999-99-99";
         return (
           rank(left) - rank(right) ||
@@ -2629,7 +2652,7 @@ class LifeOSHomeView extends ItemView {
     this.renderLiveHeading(
       section,
       attention ? "Needs attention" : "Commitment feed",
-      attention ? "Overdue, due today, scheduled today, or high priority. Open a task at its source." : "Open tasks from the master inbox, projects, people, and writing notes.",
+      attention ? "Overdue, due within 3 days, planned for today, or high priority. Open a task at its source." : "Open tasks from the master inbox, projects, people, and writing notes.",
       coverage
     );
 
@@ -2653,8 +2676,8 @@ class LifeOSHomeView extends ItemView {
     }
 
     const scoped = snapshot.tasks.filter((task) => this.inArea(task));
-    const selected = attention ? scoped.filter(task => task.overdue || task.dueToday || task.scheduledToday || task.high) : scoped.filter(task => group === "all" || this.taskGroup(task) === group);
-    if (!selected.length) section.createDiv({ cls: "life-os-live-empty", text: attention ? "Nothing urgent in the indexed tasks. Other open tasks remain available below." : "No indexed tasks in this group." });
+    const selected = attention ? scoped.filter(task => task.overdue || task.dueToday || task.dueSoon || task.scheduledToday || task.high) : scoped.filter(task => group === "all" || this.taskGroup(task) === group);
+    if (!selected.length) section.createDiv({ cls: "life-os-live-empty", text: attention ? "Nothing overdue, due within 3 days, planned for today, or high priority." : "No indexed tasks in this group." });
     const list = section.createDiv({ cls: "life-os-task-list" });
     for (const task of selected.slice(0, limit)) {
       const button = list.createEl("button", {
@@ -2675,6 +2698,22 @@ class LifeOSHomeView extends ItemView {
       }
       this.registerDomEvent(button, "click", () => void this.openPath(task.path, task.line));
     }
+    if (this.tabArea()) {
+      // an area tab lists all of its own tasks in place, instead of the vault-wide Task Dashboard
+      const area = this.tabArea(), open = this.showAllArea === area, more = scoped.length - Math.min(selected.length, limit);
+      if (open && attention) {
+        const rest = scoped.filter((task) => !selected.includes(task));
+        const list2 = section.createDiv({ cls: "life-os-task-list" });
+        for (const task of rest) {
+          const b = list2.createEl("button", { cls: task.overdue ? "life-os-task-row is-overdue" : task.dueToday || task.scheduledToday ? "life-os-task-row is-today" : "life-os-task-row" });
+          b.type = "button";
+          setIcon(b.createSpan({ cls: "life-os-task-marker" }), task.discuss ? "messages-square" : "circle");
+          const copy = b.createDiv(); copy.createEl("strong", { text: task.text }); copy.createSpan({ text: this.getTaskContext(task) });
+          this.registerDomEvent(b, "click", () => void this.openPath(task.path, task.line));
+        }
+      }
+      this.addButton(section, { icon: open ? "chevron-up" : "list-checks", label: open ? "Show fewer" : `All ${area} tasks`, description: open ? `Showing all ${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}.` : `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}${more > 0 ? `, ${more} more than shown` : ""}.`, onClick: () => { this.showAllArea = open ? null : area; this.render(); } });
+    } else
     this.addButton(section, { icon: "list-checks", label: "All tasks", description: !selected.length ? `View all ${snapshot.tasks.length} indexed open tasks.` : `Showing ${Math.min(selected.length, limit)} of ${selected.length} matching tasks.`, onClick: () => this.openPath("00 Dashboards/Task Dashboard.md") });
   }
 
@@ -2721,40 +2760,47 @@ class LifeOSHomeView extends ItemView {
     if (status === "done" || status === "complete" || status === "completed") {
       return;
     }
-    // sections are the Setup checklist's five tiers; the AI one counts as done while the AI module is removed
-    const SECTIONS = 5;
-    const marked = new Set((Array.isArray(fm.setup_sections_done) ? fm.setup_sections_done : []).map(Number).filter((n) => n >= 0 && n < SECTIONS));
-    if (!this.plugin.aiOn?.()) marked.add(3);
-    const done = marked.size, all = done === SECTIONS;
+    const REQUIRED = [0, 1, 2];
+    const holder = parent.createDiv();
+    const draw = (done, total) => {
+      holder.empty();
+      const all = total > 0 && done === total;
+      const banner = holder.createEl("section", { cls: all ? "life-os-setup-banner is-complete" : "life-os-setup-banner" });
+      const icon = banner.createSpan({ cls: "life-os-setup-icon" });
+      setIcon(icon, all ? "check-circle-2" : "route");
+      const copy = banner.createDiv();
+      copy.createEl("strong", { text: all ? `${this.appName()} is set up` : `Finish your ${this.appName()} setup` });
+      copy.createEl("p", {
+        text: all
+          ? "The app, your own words and the first daily note are in place. Finish to put this banner away; Setup stays in 00 Dashboards."
+          : total ? `${done} of ${total} required setup sections done.` : "Checking setup...",
+      });
+      const bar = copy.createDiv({ cls: "life-os-setup-progress", attr: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(total || REQUIRED.length), "aria-valuenow": String(done) } });
+      bar.createDiv({ attr: { style: `width:${total ? (100 * done) / total : 0}%` } });
+      if (all && setupFile) {
+        this.addButton(banner, { icon: "check", label: "Finish setup", description: "Hide this banner.", primary: true,
+          onClick: () => void this.app.fileManager.processFrontMatter(setupFile, (f) => { f.status = "done"; }) });
+      } else {
+        this.addButton(banner, { icon: "arrow-right", label: "Continue setup", description: "See what is left.", onClick: () => this.openPath(setupPath) });
+      }
+    };
+    draw(0, 0);
+    void this.setupProgress(fm).then(({ done, total }) => draw(done, total)).catch(() => draw(0, REQUIRED.length));
+  }
 
-    const banner = parent.createEl("section", { cls: all ? "life-os-setup-banner is-complete" : "life-os-setup-banner" });
-    const icon = banner.createSpan({ cls: "life-os-setup-icon" });
-    setIcon(icon, all ? "check-circle-2" : "route");
-    const copy = banner.createDiv();
-    copy.createEl("strong", { text: all ? `${this.appName()} is set up` : "Finish your EX3C AgendA setup" });
-    copy.createEl("p", {
-      text: all
-        ? "Every setup section is done. Finish to put this banner away; you can reopen setup from the Setup note."
-        : `${done} of ${SECTIONS} setup sections done.`,
-    });
-    const bar = copy.createDiv({ cls: "life-os-setup-progress", attr: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(SECTIONS), "aria-valuenow": String(done) } });
-    bar.createDiv({ attr: { style: `width:${(100 * done) / SECTIONS}%` } });
-    if (all && setupFile) {
-      this.addButton(banner, {
-        icon: "check",
-        label: "Finish setup",
-        description: "Mark setup done.",
-        primary: true,
-        onClick: () => void this.app.fileManager.processFrontMatter(setupFile, (f) => { f.status = "done"; }),
-      });
-    } else {
-      this.addButton(banner, {
-        icon: "arrow-right",
-        label: "Continue setup",
-        description: "Review the checklist.",
-        onClick: () => this.openPath(setupPath),
-      });
-    }
+  // Runs Meta/views/setup-checks.js (the Setup note's checks) through the Dataview API.
+  async setupProgress(fm) {
+    const REQUIRED = [0, 1, 2];
+    const marked = new Set((Array.isArray(fm.setup_sections_done) ? fm.setup_sections_done : []).map(Number));
+    const dv = this.app.plugins?.plugins?.dataview?.api;
+    let rows = [];
+    try {
+      const src = await this.app.vault.adapter.read("Meta/views/setup-checks.js");
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      if (dv) rows = await new AsyncFunction("dv", "app", "moment", "cur", src)(dv, this.app, moment, fm);
+    } catch (error) { console.warn("EX3C setup checks", error); }
+    const passing = (t) => rows.length > 0 && rows.filter((r) => r.tier === t && !r.opt).every((r) => r.ok);
+    return { done: REQUIRED.filter((t) => marked.has(t) || passing(t)).length, total: REQUIRED.length };
   }
 
   getSystemStats() {
@@ -3435,6 +3481,12 @@ module.exports = class LifeOSPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "rebuild-workflow-map",
+      name: "Redraw the workflow map canvas",
+      callback: async () => { if (await this.rebuildWorkflowCanvas(true)) new Notice("Workflow map redrawn."); },
+    });
+
+    this.addCommand({
       id: "open-widgets",
       name: "Open EX3C AgendA widgets panel",
       callback: () => this.openPalette(),
@@ -3474,7 +3526,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     // Optional modules: while the AI module is removed (no Prompts/ and no Assistant dashboard),
     // every AI entry point hides: app buttons and widgets, the AI page, and prompt buttons in notes.
     const moduleChanged = (file, oldPath = "") => {
-      if (![file.path, oldPath].some((p) => AI_MODULE_PATHS.some((m) => p === m || p.startsWith(`${m}/`)))) return;
+      if (![file.path, oldPath].some((p) => Object.values(MAP_MODULE_PATHS).flat().some((m) => p === m || p.startsWith(`${m}/`)))) return;
       window.clearTimeout(this.moduleTimer);
       this.moduleTimer = window.setTimeout(() => this.syncModuleState(), 300);
     };
@@ -3526,7 +3578,49 @@ module.exports = class LifeOSPlugin extends Plugin {
     return AI_MODULE_PATHS.some((p) => this.app.vault.getAbstractFileByPath(p));
   }
 
+  modulesOff() {
+    return Object.entries(MAP_MODULE_PATHS).filter(([, ps]) => !ps.some((p) => this.app.vault.getAbstractFileByPath(p))).map(([m]) => m).sort();
+  }
+
+  // Rebuild the workflow canvas from Guide/views/workflow-map.js with the layout in Guide/views/workflow-canvas.js,
+  // only when the set of removed modules changed since the app started (so hand-made moves survive otherwise).
+  async rebuildWorkflowCanvas(force = false) {
+    const off = this.modulesOff(), key = off.join(",");
+    if (!force && (this.canvasModules === undefined || this.canvasModules === key)) { this.canvasModules = key; return false; }
+    this.canvasModules = key;
+    try {
+      const ad = this.app.vault.adapter;
+      const src = await ad.read("Guide/views/workflow-map.js"), lib = await ad.read("Guide/views/workflow-canvas.js");
+      const data = src.slice(src.indexOf("// ---------- data ----------"), src.indexOf("// ---------- index ----------"));
+      const map = new Function(`${data}; return { PHASES, ROWS, STATUS, STEPS, LINKS };`)();
+      const build = new Function(`${lib}; return buildWorkflowCanvas;`)();
+      const text = JSON.stringify(build(map, new Set(off)), null, "\t");
+      const file = this.app.vault.getAbstractFileByPath(WORKFLOW_CANVAS);
+      if (file instanceof TFile) { if ((await this.app.vault.read(file)) !== text) await this.app.vault.modify(file, text); }
+      else await this.app.vault.create(WORKFLOW_CANVAS, text);
+      return true;
+    } catch (error) {
+      console.warn("EX3C AgendA: could not redraw the workflow canvas", error);
+      return false;
+    }
+  }
+
+  // ```agent blocks are Agent Client buttons ("Kick off this project", "Help me set up"). Without the AI module they
+  // would show as raw code, so this plugin draws them as nothing until Agent Client is back.
+  hideAgentBlocks() {
+    const hide = !this.aiOn() && !this.app.plugins.enabledPlugins.has("agent-client");
+    if (hide && !this.agentBlocksHidden) {
+      try { MarkdownPreviewRenderer.registerCodeBlockPostProcessor("agent", (source, el) => { el.addClass("ex3c-agent-hidden"); }); this.agentBlocksHidden = true; }
+      catch (error) { console.warn("EX3C AgendA: could not hide agent blocks", error); }
+    } else if (!hide && this.agentBlocksHidden) {
+      try { MarkdownPreviewRenderer.unregisterCodeBlockPostProcessor("agent"); } catch (error) { /* already gone */ }
+      this.agentBlocksHidden = false;
+    }
+  }
+
   syncModuleState(refresh = true) {
+    void this.rebuildWorkflowCanvas();
+    this.hideAgentBlocks();
     const off = !this.aiOn();
     const was = document.body.hasClass("ex3c-ai-off");
     document.body.toggleClass("ex3c-ai-off", off);
@@ -3581,6 +3675,29 @@ module.exports = class LifeOSPlugin extends Plugin {
       catch (error) { new Notice("EX3C AgendA: the layout note's json block could not be read, so the default tabs are shown."); }
     }
     this.layout = normalizeLayout(raw);
+    if (this.mergeNewDefaults() && text !== null) await this.saveLayout();
+  }
+
+  // A saved layout lists the default widgets it has seen (known). A default widget it has not seen yet goes onto the
+  // saved tab with the same id, after the default widget it follows; one you remove later stays removed.
+  mergeNewDefaults() {
+    const layout = this.layout;
+    const known = new Set(Array.isArray(layout.known) ? layout.known : [...LEGACY_KNOWN, ...layout.tabs.flatMap((t) => t.widgets)]);
+    let changed = !Array.isArray(layout.known);
+    for (const std of DEFAULT_LAYOUT.tabs) {
+      const tab = layout.tabs.find((t) => t.id === std.id);
+      if (!tab) continue;
+      std.widgets.forEach((w, i) => {
+        if (known.has(w) || tab.widgets.includes(w)) return;
+        let at = 0;
+        for (let j = i - 1; j >= 0; j--) { const k = tab.widgets.indexOf(std.widgets[j]); if (k >= 0) { at = k + 1; break; } }
+        tab.widgets.splice(at, 0, w);
+        changed = true;
+      });
+    }
+    for (const w of DEFAULT_LAYOUT.tabs.flatMap((t) => t.widgets)) if (!known.has(w)) { known.add(w); changed = true; }
+    layout.known = [...known].sort();
+    return changed;
   }
 
   async saveLayout() {
@@ -3684,7 +3801,7 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
 
   resetLayout() {
-    return this.changeLayout((layout) => { layout.tabs = JSON.parse(JSON.stringify(DEFAULT_LAYOUT.tabs)); });
+    return this.changeLayout((layout) => { layout.tabs = JSON.parse(JSON.stringify(DEFAULT_LAYOUT.tabs)); layout.known = [...new Set(DEFAULT_LAYOUT.tabs.flatMap((t) => t.widgets))].sort(); });
   }
 
   currentTab() {
@@ -3766,6 +3883,7 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
 
   onunload() {
+    if (this.agentBlocksHidden) { try { MarkdownPreviewRenderer.unregisterCodeBlockPostProcessor("agent"); } catch (error) { /* ignore */ } }
     this.app.workspace.detachLeavesOfType("life-os-brain");
     this.app.workspace.detachLeavesOfType(PALETTE_VIEW);
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
