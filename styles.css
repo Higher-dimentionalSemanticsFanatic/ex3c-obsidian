@@ -1677,7 +1677,7 @@
 .life-os-palette-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .life-os-palette-search { width: 100%; margin-bottom: 4px; }
 .life-os-palette-item { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 7px 9px; margin-bottom: 6px; background: var(--background-secondary); cursor: grab; }
-.life-os-palette-item.is-prototype { border-left: 3px solid var(--color-purple); }
+
 .life-os-palette-item.is-placed { opacity: .75; }
 .life-os-palette-item-head { display: flex; align-items: center; gap: 6px; }
 .life-os-palette-desc { font-size: var(--font-ui-small); color: var(--text-muted); margin: 2px 0; }
@@ -1704,17 +1704,17 @@ body {
 [data-workflow="projects"] { --wf: var(--wf-projects); } [data-workflow="review"] { --wf: var(--wf-review); }
 [data-workflow="people"] { --wf: var(--wf-people); } [data-workflow="writing"] { --wf: var(--wf-writing); }
 [data-workflow="system"] { --wf: var(--wf-system); } [data-workflow="yours"] { --wf: var(--wf-yours); }
-.life-os-widget-slot.is-editing { border-left: 4px solid var(--wf); }
+.life-os-widget-slot.is-editing { border-left: 3px dashed var(--background-modifier-border-hover); }
 .life-os-wf-chip { font-size: 11px; padding: 0 7px; border-radius: 8px; background: color-mix(in srgb, var(--wf) 22%, transparent); color: var(--text-normal); margin-left: 6px; }
-.life-os-palette-item[data-workflow] { border-left: 4px solid var(--wf); }
+
 /* Rail: an area page shows its area colour; workflow colours show only while editing the layout */
-.life-os-home .life-os-nav-button[data-area] { box-shadow: inset 3px 0 0 var(--tab-accent); }
+.life-os-home .life-os-nav-button[data-own-color] { box-shadow: inset 3px 0 0 var(--tab-accent); }
 .life-os-home .life-os-nav-button.is-active { box-shadow: inset 4px 0 0 var(--life-os-accent); }
-.life-os-home.is-editing .life-os-nav-button[data-workflow] { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--wf) 70%, transparent); }
+
 .life-os-edit-icons, .life-os-edit-standard { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0; font-size: 12px; }
 .life-os-edit-icons .clickable-icon.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
-.life-os-edit-standard button { border-left: 4px solid var(--wf); }
-.life-os-edit-tab[data-workflow] { border-left: 4px solid var(--wf); }
+.life-os-edit-standard button { border-left: 4px solid var(--tab-accent); }
+.life-os-edit-tab { border-left: 4px solid var(--tab-accent); }
 .life-os-wf-legend { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 10px; }
 .life-os-wf-legend .life-os-wf-chip { margin: 0; }
 /* Themes */
@@ -1754,3 +1754,11 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 /* Agent Client buttons while the AI module is removed (see hideAgentBlocks) */
 .ex3c-agent-hidden { display: none; }
 .markdown-preview-view .block-language-agent.ex3c-agent-hidden, .cm-preview-code-block:has(> .ex3c-agent-hidden) { display: none; }
+
+/* Widgets panel preview: the widget drawn from your own notes, scaled down, read only */
+.life-os-palette-item-head .life-os-palette-eye { margin: 0 0 0 auto; padding: 2px 4px; height: auto; }
+.life-os-palette-item-head .life-os-palette-eye.is-active { color: var(--interactive-accent); }
+.life-os-palette-preview { position: relative; max-height: 280px; overflow: hidden; margin-top: 6px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); pointer-events: none; }
+.life-os-palette-preview::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, var(--background-primary)); }
+.life-os-palette-preview-inner { zoom: 0.55; padding: 12px; }
+.life-os-edit-note { color: var(--text-muted); }
