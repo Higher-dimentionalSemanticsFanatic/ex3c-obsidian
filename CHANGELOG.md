@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Calendar links: the plugin fetches iCal addresses (requestUrl) for the Import calendars page and refreshes them at start-up; command Refresh calendar links.
+- Work schedule widget on the Work tab (working hours, commute) for the planner.
 - One colour per tab: its own colour (Configure, "Colour for this tab"), else its area colour, else the theme; the rail, the page and Configure show the same colour. Workflow colours are gone.
 - Widgets panel: grouped by purpose, every widget listed once with a unique name (the nine "Open and act" widgets are now "<page> shortcuts"; duplicate Connected horizons and capture buttons merged), and a live read-only preview (eye button).
 - Nine-tab default layout: Home (capture box, setup, Needs attention, planner, checklists), Check-in, Projects (Projects board fed by project notes), Work, Study, Personal, People, Library, Review. Plan, Focus and Unified Graph leave the default.
