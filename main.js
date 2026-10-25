@@ -1826,12 +1826,25 @@ class LifeOSHomeView extends ItemView {
       label: "Daily questions",
       description: "Run the guided evening check-in.",
       primary: true,
-      onClick: () =>
-        this.runCommand(
-          "templater-obsidian:Templates/Daily Questions Prompt.md",
-          "Daily questions"
-        ),
+      onClick: () => void this.runDailyQuestions(data.path),
     });
+  }
+
+  // Templater can only run the Daily Questions prompt in an open editor, so today's note is opened first
+  // (and created first if it does not exist yet).
+  async runDailyQuestions(path) {
+    let file = path ? this.app.vault.getAbstractFileByPath(path) : null;
+    if (!(file instanceof TFile)) {
+      this.runCommand("quickadd:choice:lifeos-daily", "Create today's note");
+      for (let i = 0; i < 20 && !(file instanceof TFile); i++) { await new Promise((r) => window.setTimeout(r, 250)); file = path ? this.app.vault.getAbstractFileByPath(path) : null; }
+      if (!(file instanceof TFile)) { new Notice("Create today's daily note first (Ctrl/Cmd+Shift+D), then run Daily questions."); return; }
+    }
+    let leaf = this.app.workspace.getLeavesOfType("markdown").find((l) => l.view?.file?.path === file.path);
+    if (!leaf) { leaf = this.app.workspace.getLeaf("tab"); await leaf.openFile(file, { state: { mode: "source" } }); }
+    else if (leaf.view.getMode?.() !== "source") await leaf.setViewState({ ...leaf.getViewState(), state: { ...leaf.getViewState().state, mode: "source" } });
+    this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    await new Promise((r) => window.setTimeout(r, 300));
+    this.runCommand("templater-obsidian:Templates/Daily Questions Prompt.md", "Daily questions");
   }
 
   renderTodayList(parent, title, description, rows, iconName) {
