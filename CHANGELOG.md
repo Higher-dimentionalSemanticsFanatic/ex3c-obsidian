@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Parent roll-up: ticking the last open step ticks its parent (✅, notice with Undo); ticking a parent with open steps asks; unticking reopens; rollup_parents in the config note.
+- Widgets panel previews keep the scroll position; several at once, Show all previews.
 - Page commands only for tabs in your layout; Open Brain opens the Brain view. AI tab never re-added while AI is removed.
 - Area tabs: All <area> tasks opens the grouped full list under the card.
 - Calendar links: the plugin fetches iCal addresses (requestUrl) for the Import calendars page and refreshes them at start-up; command Refresh calendar links.

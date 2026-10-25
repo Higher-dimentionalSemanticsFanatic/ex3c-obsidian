@@ -3432,6 +3432,9 @@ class LifeOSWidgetPaletteView extends ItemView {
   render() {
     const root = this.contentEl;
     const hadFocus = root.contains(document.activeElement) && document.activeElement?.tagName === "INPUT";
+    const keepScroll = root.scrollTop; // redrawing the panel must not jump back to the top
+    window.requestAnimationFrame(() => { root.scrollTop = keepScroll; });
+    if (!(this.previewing instanceof Set)) this.previewing = new Set();
     root.empty();
     root.addClass("life-os-palette");
     const plugin = this.plugin;
@@ -3458,6 +3461,12 @@ class LifeOSWidgetPaletteView extends ItemView {
     const q = this.query.trim().toLowerCase();
     const matches = WIDGETS.filter((w) => plugin.widgetShown(w.id)).filter((w) => !q || `${w.label} ${w.desc} ${w.from}`.toLowerCase().includes(q));
     const home = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0]?.view;
+    if (home instanceof LifeOSHomeView) {
+      const allOpen = matches.length > 0 && matches.every((w) => this.previewing.has(w.id));
+      const all = actions.createEl("button", { text: allOpen ? "Hide all previews" : "Show all previews" });
+      all.type = "button";
+      this.registerDomEvent(all, "click", () => { this.previewing = allOpen ? new Set() : new Set(matches.map((w) => w.id)); this.render(); });
+    }
     if (!matches.length) root.createDiv({ cls: "life-os-palette-empty", text: "No widget matches." });
     // grouped by what the widget is for; each widget is listed once, with the tabs it is on
     for (const wf of WORKFLOWS) {
@@ -3472,15 +3481,15 @@ class LifeOSWidgetPaletteView extends ItemView {
         setIcon(grip, "grip-vertical");
         head.createEl("strong", { text: widget.label });
         if (home instanceof LifeOSHomeView) {
-          const open = this.previewing === widget.id;
+          const open = this.previewing.has(widget.id);
           const pv = head.createEl("button", { cls: `clickable-icon life-os-palette-eye${open ? " is-active" : ""}`, attr: { "aria-label": open ? "Hide preview" : "Preview", title: open ? "Hide preview" : "Preview with your own notes" } });
           pv.type = "button";
           setIcon(pv, open ? "eye-off" : "eye");
-          this.registerDomEvent(pv, "click", (event) => { event.stopPropagation(); this.previewing = open ? null : widget.id; this.render(); });
+          this.registerDomEvent(pv, "click", (event) => { event.stopPropagation(); if (open) this.previewing.delete(widget.id); else this.previewing.add(widget.id); this.render(); });
         }
         item.createDiv({ cls: "life-os-palette-desc", text: widget.desc });
         item.createDiv({ cls: "life-os-palette-meta", text: onTabs.length ? `On ${onTabs.map((t) => t.label).join(", ")}` : widget.from === "Prototype" ? "Not on a tab · prototype" : "Not on a tab" });
-        if (this.previewing === widget.id && home instanceof LifeOSHomeView) {
+        if (this.previewing.has(widget.id) && home instanceof LifeOSHomeView) {
           // a live, read-only preview drawn from your own notes, scaled down
           const frame = item.createDiv({ cls: "life-os-palette-preview", attr: { inert: "", "aria-hidden": "true" } });
           const inner = frame.createDiv({ cls: "life-os-palette-preview-inner life-os-home" });
@@ -3497,6 +3506,24 @@ class LifeOSWidgetPaletteView extends ItemView {
   }
 }
 
+
+// ---------- parent roll-up ----------
+const ROLLUP_TASK_RE = /^(\s*[-*+] \[)(.)(\] )/;
+const rollupKey = (line) => line.replace(ROLLUP_TASK_RE, "").replace(/\s*(✅|❌) \d{4}-\d{2}-\d{2}/gu, "").trim();
+const isDoneChar = (c) => c === "x" || c === "X" || c === "-";
+class RollupListModal extends Modal {
+  constructor(app, title, lines, yes, onDone) { super(app); this.titleText = title; this.lines = lines; this.yes = yes; this.onDone = onDone; this.answer = false; }
+  onOpen() {
+    this.titleEl.setText(this.titleText);
+    const ul = this.contentEl.createEl("ul", { attr: { style: "max-height:40vh;overflow:auto" } });
+    for (const l of this.lines) ul.createEl("li", { text: l });
+    this.contentEl.createEl("p", { text: "You can undo this from the notice afterwards.", attr: { style: "color:var(--text-muted);font-size:12px" } });
+    const row = this.contentEl.createDiv({ attr: { style: "display:flex;gap:8px;justify-content:flex-end" } });
+    const no = row.createEl("button", { text: "No, only the parent" }); const yes = row.createEl("button", { text: this.yes, cls: "mod-cta" });
+    no.addEventListener("click", () => this.close()); yes.addEventListener("click", () => { this.answer = true; this.close(); });
+  }
+  onClose() { this.contentEl.empty(); this.onDone(this.answer); }
+}
 module.exports = class LifeOSPlugin extends Plugin {
   async onload() {
     this.editing = false;
@@ -3613,6 +3640,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       window.setTimeout(() => void this.refreshCalendars(false), 15000);
     });
     this.addCommand({ id: "refresh-calendars", name: "Refresh calendar links", callback: () => void this.refreshCalendars(true) });
+    this.setupRollup();
   }
 
   // The app's colour rule reaches Obsidian too: the accent is the app page's colour while the app is in front,
@@ -3637,6 +3665,104 @@ module.exports = class LifeOSPlugin extends Plugin {
     st.setProperty("--accent-h", String(Math.round((h + 360) % 360)));
     st.setProperty("--accent-s", `${Math.round(s * 100)}%`);
     st.setProperty("--accent-l", `${Math.round(l * 100)}%`);
+  }
+
+  // ---------- parent roll-up ----------
+  rollupOn() {
+    const f = this.app.vault.getAbstractFileByPath("Meta/EX3C Agenda Config.md");
+    return (f && this.app.metadataCache.getFileCache(f)?.frontmatter?.rollup_parents) !== false;
+  }
+  async setupRollup() {
+    this.taskSnap = new Map();
+    const saved = (await this.loadData()) || {};
+    this.autoTicked = new Set(saved.autoTicked || []);
+    this.registerEvent(this.app.metadataCache.on("changed", (file, data, cache) => { void this.onTasksChanged(file, data, cache); }));
+    // what every note's tasks look like now, so a change can be compared with it
+    window.setTimeout(async () => {
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (!cache?.listItems?.some((i) => i.task !== undefined) || this.taskSnap.has(file.path)) continue;
+        try { this.taskSnap.set(file.path, this.taskTree(await this.app.vault.cachedRead(file), cache)); } catch (error) { /* skip */ }
+      }
+    }, 8000);
+  }
+  saveRollup() { return this.saveData({ autoTicked: [...this.autoTicked].slice(-500) }); }
+  // tasks of one note as a tree: line, status, key, parent and children (by line)
+  taskTree(data, cache) {
+    const lines = data.split("\n"), items = new Map();
+    for (const li of cache?.listItems || []) {
+      if (li.task === undefined) continue;
+      const line = li.position.start.line, text = lines[line] ?? "";
+      if (!ROLLUP_TASK_RE.test(text)) continue;
+      items.set(line, { line, status: text.match(ROLLUP_TASK_RE)[2], key: rollupKey(text), parent: li.parent >= 0 ? li.parent : null, kids: [], recur: /🔁/u.test(text) });
+    }
+    for (const it of items.values()) if (it.parent !== null && items.has(it.parent)) items.get(it.parent).kids.push(it.line);
+    return items;
+  }
+  async onTasksChanged(file, data, cache) {
+    if (!(file instanceof TFile) || !cache?.listItems) return;
+    const now = this.taskTree(data, cache), prev = this.taskSnap.get(file.path);
+    this.taskSnap.set(file.path, now);
+    if (!prev || !this.rollupOn()) return;
+    const was = new Map([...prev.values()].map((it) => [it.key, it.status]));
+    const changed = [...now.values()].filter((it) => was.has(it.key) && isDoneChar(was.get(it.key)) !== isDoneChar(it.status));
+    if (!changed.length) return;
+    const leaves = (it) => (it.kids.length ? it.kids.flatMap((k) => leaves(now.get(k))) : [it]).filter((x) => x && !x.recur);
+    const ancestors = (it) => { const out = []; for (let p = it.parent; p !== null && now.has(p); p = now.get(p).parent) out.push(now.get(p)); return out; };
+    const id = (it) => `${file.path}::${it.key}`;
+    const tick = [], reopen = [], askFor = [];
+    for (const it of changed) {
+      if (isDoneChar(it.status)) {
+        // upward: the parent whose steps are now all done
+        for (const p of ancestors(it)) { if (isDoneChar(p.status) || p.recur) break; const ls = leaves(p); if (ls.length && ls.every((l) => isDoneChar(l.status) || l === it)) { if (!tick.includes(p)) tick.push(p); } else break; }
+        // downward: a parent ticked while steps under it are still open
+        const open = it.kids.length ? leaves(it).filter((l) => !isDoneChar(l.status)) : [];
+        if (open.length && !this.autoTicked.has(id(it))) askFor.push({ parent: it, open });
+      } else {
+        for (const p of ancestors(it)) if (isDoneChar(p.status) && this.autoTicked.has(id(p)) && !reopen.includes(p)) reopen.push(p);
+      }
+    }
+    if (tick.length || reopen.length) await this.rollupWrite(file, tick, reopen);
+    for (const a of askFor) {
+      const lines = a.open.map((l) => l.key.replace(/\s+[📅⏳🛫➕].*$/u, ""));
+      new RollupListModal(this.app, `Also tick ${a.open.length} step${a.open.length === 1 ? "" : "s"} under "${a.parent.key.replace(/\s+[📅⏳🛫➕].*$/u, "")}"?`, lines, `Tick ${a.open.length}`, (yes) => { if (yes) void this.rollupWrite(file, a.open, [], true); }).open();
+    }
+  }
+  // ticks (with the Tasks plugin, so ✅ is written) or reopens task lines, then offers Undo
+  async rollupWrite(file, tick, reopen, asked = false) {
+    const tasksApi = this.app.plugins?.plugins?.["obsidian-tasks-plugin"]?.apiV1;
+    const changes = [];
+    await this.app.vault.process(file, (data) => {
+      const L = data.split("\n");
+      const find = (it) => { if (L[it.line] !== undefined && rollupKey(L[it.line]) === it.key) return it.line; return L.findIndex((l) => ROLLUP_TASK_RE.test(l) && rollupKey(l) === it.key); };
+      for (const it of tick) {
+        const i = find(it); if (i < 0 || isDoneChar(L[i].match(ROLLUP_TASK_RE)[2])) continue;
+        let next = tasksApi?.executeToggleTaskDoneCommand ? tasksApi.executeToggleTaskDoneCommand(L[i], file.path) : `${L[i].replace(ROLLUP_TASK_RE, "$1x$3")} ✅ ${moment().format("YYYY-MM-DD")}`;
+        if (next.includes("\n")) next = next.split("\n").pop(); // never adds a repeat (repeating parents are skipped anyway)
+        changes.push({ before: L[i], after: next, key: it.key, kind: "tick" }); L[i] = next;
+      }
+      for (const it of reopen) {
+        const i = find(it); if (i < 0) continue;
+        const next = L[i].replace(ROLLUP_TASK_RE, "$1 $3").replace(/\s*✅ \d{4}-\d{2}-\d{2}/u, "");
+        changes.push({ before: L[i], after: next, key: it.key, kind: "reopen" }); L[i] = next;
+      }
+      return L.join("\n");
+    });
+    if (!changes.length) return;
+    for (const c of changes) { const k = `${file.path}::${c.key}`; if (c.kind === "tick" && !asked) this.autoTicked.add(k); else this.autoTicked.delete(k); }
+    void this.saveRollup();
+    const name = (c) => c.key.replace(/\s+[📅⏳🛫➕\[].*$/u, "");
+    const msg = asked ? `Ticked ${changes.length} step${changes.length === 1 ? "" : "s"}.` : changes.map((c) => (c.kind === "tick" ? `${name(c)}: all its steps are done, so it is ticked too.` : `${name(c)} is open again: one of its steps is not done.`)).join(" ");
+    const frag = document.createDocumentFragment();
+    frag.appendChild(document.createTextNode(`${msg} `));
+    const undo = document.createElement("a"); undo.textContent = "Undo"; undo.style.cursor = "pointer"; frag.appendChild(undo);
+    const notice = new Notice(frag, 10000);
+    undo.addEventListener("click", async () => {
+      notice.hide();
+      await this.app.vault.process(file, (data) => { const L = data.split("\n"); for (const c of changes) { const i = L.indexOf(c.after); if (i >= 0) L[i] = c.before; } return L.join("\n"); });
+      for (const c of changes) this.autoTicked.delete(`${file.path}::${c.key}`);
+      void this.saveRollup();
+    });
   }
 
   // Text from a web address (a calendar link). Obsidian's requestUrl is not bound by the browser's CORS rules.
