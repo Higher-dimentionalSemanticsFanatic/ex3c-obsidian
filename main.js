@@ -2722,18 +2722,33 @@ class LifeOSHomeView extends ItemView {
     if (this.tabArea()) {
       // an area tab lists all of its own tasks in place, instead of the vault-wide Task Dashboard
       const area = this.tabArea(), open = this.showAllArea === area, more = scoped.length - Math.min(selected.length, limit);
-      if (open && attention) {
-        const rest = scoped.filter((task) => !selected.includes(task));
-        const list2 = section.createDiv({ cls: "life-os-task-list" });
-        for (const task of rest) {
-          const b = list2.createEl("button", { cls: task.overdue ? "life-os-task-row is-overdue" : task.dueToday || task.scheduledToday ? "life-os-task-row is-today" : "life-os-task-row" });
-          b.type = "button";
-          setIcon(b.createSpan({ cls: "life-os-task-marker" }), task.discuss ? "messages-square" : "circle");
-          const copy = b.createDiv(); copy.createEl("strong", { text: task.text }); copy.createSpan({ text: this.getTaskContext(task) });
-          this.registerDomEvent(b, "click", () => void this.openPath(task.path, task.line));
+      this.addButton(section, { icon: open ? "chevron-up" : "list-checks", label: open ? `Hide the full ${area} list` : `All ${area} tasks`, description: open ? `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}, below.` : `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}${more > 0 ? `, ${more} more than shown above` : ""}.`, onClick: () => { this.showAllArea = open ? null : area; this.scrollToAreaList = !open; this.render(true); } });
+      if (open) {
+        const all = section.createDiv({ cls: "life-os-area-all" });
+        all.createEl("h3", { text: `All open ${area} tasks (${scoped.length})` });
+        const today = moment().format("YYYY-MM-DD");
+        const groups = [
+          ["Overdue", scoped.filter((t) => t.overdue)],
+          ["Today", scoped.filter((t) => !t.overdue && (t.dueToday || t.scheduledToday))],
+          ["Coming up", scoped.filter((t) => !t.overdue && !t.dueToday && !t.scheduledToday && ((t.due && t.due > today) || (t.scheduled && t.scheduled > today)))],
+          ["No date", scoped.filter((t) => !t.due && !t.scheduled)],
+          ["Planned earlier, not done", scoped.filter((t) => !t.overdue && !t.due && t.scheduled && t.scheduled < today)],
+        ];
+        for (const [name, list] of groups) {
+          if (!list.length) continue;
+          all.createEl("h4", { text: `${name} (${list.length})` });
+          const box = all.createDiv({ cls: "life-os-task-list" });
+          for (const task of list) {
+            const b = box.createEl("button", { cls: task.overdue ? "life-os-task-row is-overdue" : task.dueToday || task.scheduledToday ? "life-os-task-row is-today" : "life-os-task-row" });
+            b.type = "button";
+            setIcon(b.createSpan({ cls: "life-os-task-marker" }), task.discuss ? "messages-square" : "circle");
+            const copy = b.createDiv(); copy.createEl("strong", { text: task.text }); copy.createSpan({ text: this.getTaskContext(task) });
+            if (task.high) b.createSpan({ cls: "life-os-task-priority", text: "High" });
+            this.registerDomEvent(b, "click", () => void this.openPath(task.path, task.line));
+          }
         }
+        if (this.scrollToAreaList) { this.scrollToAreaList = false; window.setTimeout(() => all.scrollIntoView({ behavior: "smooth", block: "start" }), 250); }
       }
-      this.addButton(section, { icon: open ? "chevron-up" : "list-checks", label: open ? "Show fewer" : `All ${area} tasks`, description: open ? `Showing all ${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}.` : `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}${more > 0 ? `, ${more} more than shown` : ""}.`, onClick: () => { this.showAllArea = open ? null : area; this.render(); } });
     } else
     this.addButton(section, { icon: "list-checks", label: "All tasks", description: !selected.length ? `View all ${snapshot.tasks.length} indexed open tasks.` : `Showing ${Math.min(selected.length, limit)} of ${selected.length} matching tasks.`, onClick: () => this.openPath("00 Dashboards/Task Dashboard.md") });
   }
@@ -3542,17 +3557,20 @@ module.exports = class LifeOSPlugin extends Plugin {
       if (file.path === LAYOUT_PATH && !this.savingLayout) void this.loadLayout().then(() => this.refreshViews());
     }));
 
-    for (const item of NAV_ITEMS.filter((item) => item.id !== "home")) {
+    // one command per page, offered only while that page is in your layout (ids stay the same as before)
+    const PAGE_COMMANDS = [["today", "Check-in"], ["projects", "Projects"], ["work", "Work"], ["study", "Study"], ["personal", "Personal"], ["people", "People"], ["library", "Library"], ["review", "Review"], ["plan", "Plan"], ["focus", "Focus"], ["create", "Create"], ["ai", "AI"]];
+    for (const [id, label] of PAGE_COMMANDS) {
       this.addCommand({
-        id: `open-${item.id}`,
-        name: `Open EX3C AgendA ${item.label}`,
+        id: `open-${id}`,
+        name: `Open EX3C AgendA ${label}`,
         checkCallback: (checking) => {
-          if (item.id === "ai" && !this.aiOn()) return false;
-          if (!checking) void this.activateView(item.id);
+          if (!this.layout?.tabs?.some((t) => t.id === id) || (id === "ai" && !this.aiOn())) return false;
+          if (!checking) void this.activateView(id);
           return true;
         },
       });
     }
+    this.addCommand({ id: "open-brain", name: "Open EX3C AgendA Brain", callback: () => void this.app.workspace.getLeaf("tab").setViewState({ type: "life-os-brain", active: true }) });
 
     // Optional modules: while the AI module is removed (no Prompts/ and no Assistant dashboard),
     // every AI entry point hides: app buttons and widgets, the AI page, and prompt buttons in notes.
@@ -3856,7 +3874,7 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
 
   resetLayout() {
-    return this.changeLayout((layout) => { layout.tabs = JSON.parse(JSON.stringify(DEFAULT_LAYOUT.tabs)); layout.known = [...new Set(DEFAULT_LAYOUT.tabs.flatMap((t) => t.widgets))].sort(); });
+    return this.changeLayout((layout) => { layout.tabs = JSON.parse(JSON.stringify(DEFAULT_LAYOUT.tabs.filter((t) => t.id !== "ai" || this.aiOn()))); layout.known = [...new Set(DEFAULT_LAYOUT.tabs.flatMap((t) => t.widgets))].sort(); });
   }
 
   currentTab() {

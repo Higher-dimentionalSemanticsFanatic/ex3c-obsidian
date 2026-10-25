@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Page commands only for tabs in your layout; Open Brain opens the Brain view. AI tab never re-added while AI is removed.
+- Area tabs: All <area> tasks opens the grouped full list under the card.
 - Calendar links: the plugin fetches iCal addresses (requestUrl) for the Import calendars page and refreshes them at start-up; command Refresh calendar links.
 - Work schedule widget on the Work tab (working hours, commute) for the planner.
 - One colour per tab: its own colour (Configure, "Colour for this tab"), else its area colour, else the theme; the rail, the page and Configure show the same colour. Workflow colours are gone.

@@ -1762,3 +1762,4 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .life-os-palette-preview::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, var(--background-primary)); }
 .life-os-palette-preview-inner { zoom: 0.55; padding: 12px; }
 .life-os-edit-note { color: var(--text-muted); }
+.life-os-area-all { margin-top: 10px; border-top: 1px solid var(--background-modifier-border); padding-top: 6px; } .life-os-area-all h3 { margin: 4px 0; font-size: 1em; } .life-os-area-all h4 { margin: 10px 0 4px; font-size: var(--font-ui-small); color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
