@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Inbox to sort widget (Home): Today (⏳ today), Soon (#soon), Eventually (moves to ## Someday).
 - Birthdays widget (People tab) from the birthday property of people notes; birthdays on their day in the planner.
 - Work schedule writes #work blocks in the Ideal Week (one switch).
 - Colour per pane: Obsidian's accent stays the Theme colour; a note with an area gets its area colour in its own pane; the app's page colour no longer leaks into notes.
