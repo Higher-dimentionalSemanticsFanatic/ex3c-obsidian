@@ -3633,7 +3633,8 @@ module.exports = class LifeOSPlugin extends Plugin {
     const accentSoon = () => { window.clearTimeout(this.accentTimer); this.accentTimer = window.setTimeout(() => this.applyAccent(), 50); };
     this.registerEvent(this.app.workspace.on("active-leaf-change", accentSoon));
     this.registerEvent(this.app.workspace.on("file-open", accentSoon));
-    this.registerEvent(this.app.metadataCache.on("changed", (file) => { if (file === this.app.workspace.getActiveFile()) accentSoon(); }));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => { if (this.app.workspace.getLeavesOfType("markdown").some((l) => l.view?.file === file)) accentSoon(); }));
+    this.registerEvent(this.app.workspace.on("layout-change", accentSoon));
     this.register(() => { for (const k of ["--accent-h", "--accent-s", "--accent-l"]) document.body.style.removeProperty(k); });
 
     this.app.workspace.onLayoutReady(async () => {
@@ -3652,28 +3653,44 @@ module.exports = class LifeOSPlugin extends Plugin {
     this.setupRollup();
   }
 
-  // The app's colour rule reaches Obsidian too: the accent is the app page's colour while the app is in front,
-  // the area colour for a note with area: work/study/personal, and the Theme colour for any other note.
+  // Colour per pane: Obsidian's accent stays the Theme colour; a note with area: work/study/personal gets that area's
+  // colour in its own pane only (the app sets its page colour inside its own view), so tabs side by side never mix.
   accentFor(leaf) {
     const theme = this.layout.theme || normalizeTheme(null);
-    const view = leaf?.view;
-    if (view?.getViewType?.() === VIEW_TYPE && view.pageAccent) return view.pageAccent;
-    const file = view?.file;
+    const file = leaf?.view?.file;
     const area = file ? String(this.app.metadataCache.getFileCache(file)?.frontmatter?.area ?? "").toLowerCase() : "";
-    return themeAccent(theme, AREAS.includes(area) ? area : null);
+    return AREAS.includes(area) ? themeAccent(theme, area) : null;
   }
 
   applyAccent() {
-    const hex = this.accentFor(this.app.workspace.getMostRecentLeaf?.() || this.app.workspace.activeLeaf);
-    if (!HEX.test(hex)) return;
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, dlt = max - min;
-    const s = dlt ? dlt / (1 - Math.abs(2 * l - 1)) : 0;
-    const h = !dlt ? 0 : max === r ? 60 * (((g - b) / dlt) % 6) : max === g ? 60 * ((b - r) / dlt + 2) : 60 * ((r - g) / dlt + 4);
-    const st = document.body.style;
-    st.setProperty("--accent-h", String(Math.round((h + 360) % 360)));
-    st.setProperty("--accent-s", `${Math.round(s * 100)}%`);
-    st.setProperty("--accent-l", `${Math.round(l * 100)}%`);
+    const theme = this.layout.theme || normalizeTheme(null);
+    const hsl = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, dlt = max - min;
+      const s = dlt ? dlt / (1 - Math.abs(2 * l - 1)) : 0;
+      const h = !dlt ? 0 : max === r ? 60 * (((g - b) / dlt) % 6) : max === g ? 60 * ((b - r) / dlt + 2) : 60 * ((r - g) / dlt + 4);
+      return [Math.round((h + 360) % 360), Math.round(s * 100), Math.round(l * 100)];
+    };
+    const base = themeAccent(theme, null);
+    if (HEX.test(base)) {
+      const [h, s, l] = hsl(base), st = document.body.style;
+      st.setProperty("--accent-h", String(h)); st.setProperty("--accent-s", `${s}%`); st.setProperty("--accent-l", `${l}%`);
+    }
+    const VARS = ["--accent-h", "--accent-s", "--accent-l", "--color-accent", "--color-accent-1", "--color-accent-2", "--interactive-accent", "--interactive-accent-hover", "--text-accent", "--text-accent-hover"];
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const el = leaf.view?.containerEl, hex = this.accentFor(leaf);
+      if (!el) continue;
+      if (!hex || !HEX.test(hex)) { for (const v of VARS) el.style.removeProperty(v); continue; }
+      const [h, s, l] = hsl(hex);
+      el.style.setProperty("--accent-h", String(h)); el.style.setProperty("--accent-s", `${s}%`); el.style.setProperty("--accent-l", `${l}%`);
+      el.style.setProperty("--color-accent", hex);
+      el.style.setProperty("--color-accent-1", `hsl(${h}, ${s}%, ${Math.min(95, l + 4)}%)`);
+      el.style.setProperty("--color-accent-2", `hsl(${h}, ${s}%, ${Math.min(95, l + 8)}%)`);
+      el.style.setProperty("--interactive-accent", hex);
+      el.style.setProperty("--interactive-accent-hover", `hsl(${h}, ${s}%, ${Math.min(95, l + 6)}%)`);
+      el.style.setProperty("--text-accent", `hsl(${h}, ${s}%, ${Math.min(90, l + 10)}%)`);
+      el.style.setProperty("--text-accent-hover", `hsl(${h}, ${s}%, ${Math.min(95, l + 16)}%)`);
+    }
   }
 
   // ---------- parent roll-up ----------
