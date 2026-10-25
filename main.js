@@ -803,6 +803,12 @@ const WIDGETS = [
   "from": "Prototype"
  },
  {
+  "id": "proto.birthdays",
+  "label": "Birthdays",
+  "desc": "Coming birthdays from the birthday property of your people notes, with the age they turn; Present adds a task a week before.",
+  "from": "Prototype"
+ },
+ {
   "id": "proto.checklists",
   "label": "Checklists",
   "desc": "Reusable checklists (packing list, routines): progress, tick items, Reset to untick them for next time.",
@@ -828,7 +834,7 @@ const WIDGETS = [
  }
 ];
 const WIDGET_BY_ID = new Map(WIDGETS.map((widget) => [widget.id, widget]));
-const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["proto.capture", "home.setup", "today.attention", "proto.planner", "proto.checklists"]}, {"id": "today", "label": "Check-in", "icon": "moon", "widgets": ["today.glance", "today.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["proto.projectboard", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.workschedule", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "study", "label": "Study", "area": "study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "proto.purchases"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.week", "review.effort", "review.habits", "review.areas", "review.calendar", "plan.horizons", "review.actions"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
+const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["proto.capture", "home.setup", "today.attention", "proto.planner", "proto.checklists"]}, {"id": "today", "label": "Check-in", "icon": "moon", "widgets": ["today.glance", "today.actions"]}, {"id": "projects", "label": "Projects", "widgets": ["proto.projectboard", "proto.sequence", "proto.purchases", "projects.actions"]}, {"id": "work", "label": "Work", "area": "work", "widgets": ["today.attention", "proto.workschedule", "proto.planner", "proto.sequence", "projects.pulse"]}, {"id": "study", "label": "Study", "area": "study", "widgets": ["proto.courses", "today.attention", "proto.planner", "proto.sequence"]}, {"id": "personal", "label": "Personal", "area": "personal", "widgets": ["today.attention", "proto.planner", "proto.sequence", "proto.purchases"]}, {"id": "people", "label": "People", "widgets": ["people.directory", "proto.birthdays", "people.discuss", "people.actions"]}, {"id": "library", "label": "Library", "widgets": ["library.shelf", "library.actions"]}, {"id": "review", "label": "Review", "widgets": ["review.week", "review.effort", "review.habits", "review.areas", "review.calendar", "plan.horizons", "review.actions"]}, {"id": "ai", "label": "AI", "widgets": ["ai.control", "ai.diagram", "ai.system", "ai.actions", "ai.principle"]}]};
 // Widgets every layout saved before 21-10-2026 already knew about (the default of that time, minus the capture box,
 // which never reached saved layouts). A widget added to the default later is put on the saved layout's matching tab once.
 const LEGACY_KNOWN = ["ai.actions", "ai.control", "ai.diagram", "ai.principle", "ai.system", "brain.graph", "focus.actions", "focus.commitments", "focus.feed", "focus.groups", "home.brain", "home.capture", "home.hero", "home.horizons", "home.now", "home.setup", "home.signals", "library.actions", "library.shelf", "people.actions", "people.directory", "people.discuss", "plan.actions", "plan.horizons", "projects.actions", "projects.pulse", "proto.checklists", "proto.courses", "proto.planner", "proto.projectboard", "proto.purchases", "proto.sequence", "review.actions", "review.areas", "review.calendar", "review.effort", "review.habits", "review.week", "today.actions", "today.attention", "today.glance"];
@@ -867,7 +873,7 @@ function workflowOf(id) {
   if (/^focus\./.test(id)) return "tasks";
   if (/^(projects\.|proto\.(sequence|purchases|courses|projectboard))/.test(id)) return "projects";
   if (/^review\./.test(id)) return "review";
-  if (/^people\./.test(id)) return "people";
+  if (/^people\./.test(id) || id === "proto.birthdays") return "people";
   if (/^(create|library)\./.test(id)) return "writing";
   return "system";
 }
@@ -1405,6 +1411,7 @@ class LifeOSHomeView extends ItemView {
       case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture", { area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.projectboard": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Projects/views/board", { area: ${JSON.stringify(this.tabArea())} });`);
       case "proto.workschedule": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/workschedule");`);
+      case "proto.birthdays": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/People/views/birthdays");`);
       case "proto.checklists": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Checklists/views/checklists", { folder: "09 Checklists" });`);
       case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Study/views/courses");`);
       case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Modules/views/modules");`);

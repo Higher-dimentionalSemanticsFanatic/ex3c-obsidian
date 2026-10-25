@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Birthdays widget (People tab) from the birthday property of people notes; birthdays on their day in the planner.
+- Work schedule writes #work blocks in the Ideal Week (one switch).
 - Colour per pane: Obsidian's accent stays the Theme colour; a note with an area gets its area colour in its own pane; the app's page colour no longer leaks into notes.
 - Markdown dashboards retired: their shortcuts open the matching tab or are left out; All tasks opens in place on every tab; roll-up keeps nothing outside the notes (no data.json).
 - Parent roll-up: ticking the last open step ticks its parent (✅, notice with Undo); ticking a parent with open steps asks; unticking reopens; rollup_parents in the config note.
