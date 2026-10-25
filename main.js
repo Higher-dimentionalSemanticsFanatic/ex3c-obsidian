@@ -188,6 +188,8 @@ const PERIOD_ACTIONS = [
   },
 ];
 
+// The Markdown dashboards were retired on 25-10-2026; a shortcut that pointed at one opens the tab that shows the same.
+const RETIRED_DASHBOARDS = { "00 Dashboards/Dashboard.md": "home", "00 Dashboards/Task Dashboard.md": "home", "00 Dashboards/Projects Dashboard.md": "projects", "00 Dashboards/Habit Canvas.md": "review", "00 Dashboards/Daily Questions.md": "review", "00 Dashboards/Boards.md": "library" };
 const DESTINATIONS = [
   {
     icon: "layout-dashboard",
@@ -2732,13 +2734,13 @@ class LifeOSHomeView extends ItemView {
       }
       this.registerDomEvent(button, "click", () => void this.openPath(task.path, task.line));
     }
-    if (this.tabArea()) {
-      // an area tab lists all of its own tasks in place, instead of the vault-wide Task Dashboard
-      const area = this.tabArea(), open = this.showAllArea === area, more = scoped.length - Math.min(selected.length, limit);
-      this.addButton(section, { icon: open ? "chevron-up" : "list-checks", label: open ? `Hide the full ${area} list` : `All ${area} tasks`, description: open ? `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}, below.` : `${scoped.length} open ${area} task${scoped.length === 1 ? "" : "s"}${more > 0 ? `, ${more} more than shown above` : ""}.`, onClick: () => { this.showAllArea = open ? null : area; this.scrollToAreaList = !open; this.render(true); } });
+    {
+      // "All tasks" (on an area tab: all of that area's) opens the full list in place
+      const area = this.tabArea() || "", open = this.showAllArea === (area || "all"), more = scoped.length - Math.min(selected.length, limit);
+      this.addButton(section, { icon: open ? "chevron-up" : "list-checks", label: open ? `Hide the full${area ? ` ${area}` : ""} list` : `All${area ? ` ${area}` : ""} tasks`, description: open ? `${scoped.length} open${area ? ` ${area}` : ""} task${scoped.length === 1 ? "" : "s"}, below.` : `${scoped.length} open${area ? ` ${area}` : ""} task${scoped.length === 1 ? "" : "s"}${more > 0 ? `, ${more} more than shown above` : ""}.`, onClick: () => { this.showAllArea = open ? null : area || "all"; this.scrollToAreaList = !open; this.render(true); } });
       if (open) {
         const all = section.createDiv({ cls: "life-os-area-all" });
-        all.createEl("h3", { text: `All open ${area} tasks (${scoped.length})` });
+        all.createEl("h3", { text: `All open${area ? ` ${area}` : ""} tasks (${scoped.length})` });
         const today = moment().format("YYYY-MM-DD");
         const groups = [
           ["Overdue", scoped.filter((t) => t.overdue)],
@@ -2762,8 +2764,7 @@ class LifeOSHomeView extends ItemView {
         }
         if (this.scrollToAreaList) { this.scrollToAreaList = false; window.setTimeout(() => all.scrollIntoView({ behavior: "smooth", block: "start" }), 250); }
       }
-    } else
-    this.addButton(section, { icon: "list-checks", label: "All tasks", description: !selected.length ? `View all ${snapshot.tasks.length} indexed open tasks.` : `Showing ${Math.min(selected.length, limit)} of ${selected.length} matching tasks.`, onClick: () => this.openPath("00 Dashboards/Task Dashboard.md") });
+    }
   }
 
   getTaskContext(task) {
@@ -2913,6 +2914,9 @@ class LifeOSHomeView extends ItemView {
     const grid = section.createDiv({ cls: "life-os-grid" });
 
     for (const action of actions) {
+      // a shortcut to a retired dashboard goes to its tab: left out on that tab itself, or when that tab is gone
+      const goes = action.path && !this.app.vault.getAbstractFileByPath(action.path) ? RETIRED_DASHBOARDS[action.path] : null;
+      if (goes && (goes === this.activeScreen || !this.layout.tabs.some((t) => t.id === goes) || ["Discuss queue", "Whole-life review"].includes(action.label))) continue;
       this.addButton(grid, {
         icon: action.icon,
         label: action.label,
@@ -2968,6 +2972,11 @@ class LifeOSHomeView extends ItemView {
   }
 
   async openPath(path, line = null) {
+    if (RETIRED_DASHBOARDS[path] && !this.app.vault.getAbstractFileByPath(path) && this.layout.tabs.some((t) => t.id === RETIRED_DASHBOARDS[path])) {
+      this.activeScreen = RETIRED_DASHBOARDS[path];
+      this.render(true);
+      return;
+    }
     if (path === `${DEFAULT_FOLDERS.projects}/Projects Board.md`) {
       path = `${this.getConfiguredFolders().projects}/Projects Board.md`;
     }
@@ -3674,8 +3683,7 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
   async setupRollup() {
     this.taskSnap = new Map();
-    const saved = (await this.loadData()) || {};
-    this.autoTicked = new Set(saved.autoTicked || []);
+    this.autoTicked = new Set(); // this session only: everything lasting is read from the notes (✅ dates)
     this.registerEvent(this.app.metadataCache.on("changed", (file, data, cache) => { void this.onTasksChanged(file, data, cache); }));
     // what every note's tasks look like now, so a change can be compared with it
     window.setTimeout(async () => {
@@ -3686,7 +3694,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       }
     }, 8000);
   }
-  saveRollup() { return this.saveData({ autoTicked: [...this.autoTicked].slice(-500) }); }
+  saveRollup() { /* nothing is stored outside the notes */ }
   // tasks of one note as a tree: line, status, key, parent and children (by line)
   taskTree(data, cache) {
     const lines = data.split("\n"), items = new Map();
@@ -3694,7 +3702,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       if (li.task === undefined) continue;
       const line = li.position.start.line, text = lines[line] ?? "";
       if (!ROLLUP_TASK_RE.test(text)) continue;
-      items.set(line, { line, status: text.match(ROLLUP_TASK_RE)[2], key: rollupKey(text), parent: li.parent >= 0 ? li.parent : null, kids: [], recur: /🔁/u.test(text) });
+      items.set(line, { line, status: text.match(ROLLUP_TASK_RE)[2], key: rollupKey(text), text, parent: li.parent >= 0 ? li.parent : null, kids: [], recur: /🔁/u.test(text) });
     }
     for (const it of items.values()) if (it.parent !== null && items.has(it.parent)) items.get(it.parent).kids.push(it.line);
     return items;
@@ -3719,7 +3727,9 @@ module.exports = class LifeOSPlugin extends Plugin {
         const open = it.kids.length ? leaves(it).filter((l) => !isDoneChar(l.status)) : [];
         if (open.length && !this.autoTicked.has(id(it))) askFor.push({ parent: it, open });
       } else {
-        for (const p of ancestors(it)) if (isDoneChar(p.status) && this.autoTicked.has(id(p)) && !reopen.includes(p)) reopen.push(p);
+        // reopen a parent that was ticked along with its last step: its ✅ is the same day as that step's (read from the note)
+        const doneOn = (x) => (x.text.match(/✅ (\d{4}-\d{2}-\d{2})/u) || [])[1] || null;
+        for (const p of ancestors(it)) { if (!isDoneChar(p.status) || reopen.includes(p)) continue; const ls = leaves(p).filter((l) => l !== it && doneOn(l)); const last = ls.map(doneOn).sort().pop(); if (this.autoTicked.has(id(p)) || (doneOn(p) && last && doneOn(p) === last)) reopen.push(p); }
       }
     }
     if (tick.length || reopen.length) await this.rollupWrite(file, tick, reopen);

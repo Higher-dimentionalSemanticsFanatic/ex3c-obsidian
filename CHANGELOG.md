@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Markdown dashboards retired: their shortcuts open the matching tab or are left out; All tasks opens in place on every tab; roll-up keeps nothing outside the notes (no data.json).
 - Parent roll-up: ticking the last open step ticks its parent (✅, notice with Undo); ticking a parent with open steps asks; unticking reopens; rollup_parents in the config note.
 - Widgets panel previews keep the scroll position; several at once, Show all previews.
 - Page commands only for tabs in your layout; Open Brain opens the Brain view. AI tab never re-added while AI is removed.
