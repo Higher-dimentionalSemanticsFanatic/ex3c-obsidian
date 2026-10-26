@@ -811,7 +811,7 @@ const WIDGETS = [
  {
   "id": "proto.triage",
   "label": "Inbox to sort",
-  "desc": "Every task waiting in the inbox with three buttons: Today (⏳ today), Soon (#soon, planned first), Eventually (moves it to Someday).",
+  "desc": "Every task waiting in the inbox with three buttons: Today (⏳ today), Soon (moves it under ## Soon, to plan within a month), Eventually (moves it under ## Eventually).",
   "from": "Prototype"
  },
  {
@@ -893,7 +893,10 @@ function tabWorkflow(tab) {
 const PAGE_ICONS = ["home", "sun", "sunrise", "calendar-range", "calendar-days", "crosshair", "target", "line-chart", "folder-kanban", "graduation-cap", "book-open", "briefcase", "user", "users", "heart", "pen-tool", "library", "brain", "sparkles", "layout-grid", "list-checks", "inbox", "rocket", "flask-conical", "dumbbell", "wallet", "shopping-cart", "music", "gamepad-2", "plane", "leaf", "coffee", "lightbulb", "compass", "map", "flag", "star", "zap", "shield", "settings"];
 
 // Themes: a preset accent for the whole app, and an accent per area so Work, Study and Personal feel different.
-const THEME_PRESETS = { default: "#bb876e", ocean: "#3d8bd4", forest: "#4f9a6b", violet: "#8f6bdc", ember: "#e0714f", mono: "#9aa0a6" };
+// No red: red means overdue everywhere, so no page may be red.
+const THEME_PRESETS = { default: "#bb876e", ocean: "#3d8bd4", sky: "#4fb3d9", teal: "#2a9d8f", forest: "#4f9a6b", lime: "#8bb83a", yellow: "#d9b02a", amber: "#e3913a", ember: "#e0714f", pink: "#d35f99", violet: "#8f6bdc", indigo: "#5c6bc0", mono: "#9aa0a6" };
+// Light colours (yellow, lime, sky) need dark text on their buttons.
+const textOn = (hex) => { const n = parseInt(String(hex).slice(1), 16), r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255; return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? "#1e1e1e" : "#ffffff"; };
 const DEFAULT_AREA_COLORS = { work: "#4a7fd4", study: "#8f6bdc", personal: "#4bb38a" };
 const HEX = /^#[0-9a-f]{6}$/i;
 function normalizeTheme(raw) {
@@ -1113,6 +1116,7 @@ class LifeOSHomeView extends ItemView {
       css.setProperty("--life-os-accent", accent);
       css.setProperty("--life-os-accent-soft", `color-mix(in srgb, ${accent} 70%, white)`);
       css.setProperty("--interactive-accent", accent);
+      css.setProperty("--text-on-accent", HEX.test(accent) ? textOn(accent) : "");
       css.setProperty("--text-accent", `color-mix(in srgb, ${accent} 80%, var(--text-normal))`);
       if (tab?.area && theme.areaTint) root.setAttribute("data-area", tab.area); else root.removeAttribute("data-area");
     }
@@ -1270,6 +1274,7 @@ class LifeOSHomeView extends ItemView {
         const lab = colorRow.createEl("label", { text: `${current.area[0].toUpperCase()}${current.area.slice(1)} area colour ` });
         const input = lab.createEl("input", { attr: { type: "color", value: themeNow.areas[current.area], "aria-label": `${current.area} colour` } });
         this.registerDomEvent(input, "change", () => void this.plugin.setTheme({ areas: { ...themeNow.areas, [current.area]: input.value } }));
+        this.colourDots(colorRow, themeNow.areas[current.area], (hex) => this.plugin.setTheme({ areas: { ...themeNow.areas, [current.area]: hex } }));
         colorRow.createSpan({ cls: "life-os-edit-note", text: `Shared by every ${current.area} page and note.` });
       } else {
         const useTheme = colorRow.createEl("button", { cls: current.color ? "life-os-swatch" : "life-os-swatch is-active", attr: { style: `--sw:${themeAccent(themeNow, null)}` } });
@@ -1279,6 +1284,7 @@ class LifeOSHomeView extends ItemView {
         const lab = colorRow.createEl("label", { text: "Own colour " });
         const input = lab.createEl("input", { attr: { type: "color", value: tabAccent(themeNow, current), "aria-label": "Own colour for this tab" } });
         this.registerDomEvent(input, "change", () => void this.plugin.setTabColor(current.id, input.value));
+        this.colourDots(colorRow, current.color, (hex) => this.plugin.setTabColor(current.id, hex));
       }
       const iconRow = bar.createDiv({ cls: "life-os-edit-icons" });
       iconRow.createSpan({ text: `Icon for “${current.label}”:` });
@@ -2781,6 +2787,16 @@ class LifeOSHomeView extends ItemView {
     }
   }
 
+  // one click picks a theme colour; the colour input next to it still takes any other
+  colourDots(parent, now, pick) {
+    const row = parent.createSpan({ cls: "life-os-dots" });
+    for (const [name, hex] of Object.entries(THEME_PRESETS)) {
+      const d = row.createEl("button", { cls: String(now || "").toLowerCase() === hex ? "life-os-dot is-active" : "life-os-dot", attr: { title: name, "aria-label": `Colour ${name}`, style: `--sw:${hex}` } });
+      d.type = "button";
+      this.registerDomEvent(d, "click", () => void pick(hex));
+    }
+  }
+
   getTaskContext(task) {
     if (task.overdue) {
       return `Overdue · ${dmy(task.due)}`;
@@ -3690,7 +3706,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       const [h, s, l] = hsl(base), st = document.body.style;
       st.setProperty("--accent-h", String(h)); st.setProperty("--accent-s", `${s}%`); st.setProperty("--accent-l", `${l}%`);
     }
-    const VARS = ["--accent-h", "--accent-s", "--accent-l", "--color-accent", "--color-accent-1", "--color-accent-2", "--interactive-accent", "--interactive-accent-hover", "--text-accent", "--text-accent-hover"];
+    const VARS = ["--accent-h", "--accent-s", "--accent-l", "--color-accent", "--color-accent-1", "--color-accent-2", "--interactive-accent", "--interactive-accent-hover", "--text-accent", "--text-accent-hover", "--text-on-accent"];
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const el = leaf.view?.containerEl, hex = this.accentFor(leaf);
       if (!el) continue;
@@ -3704,6 +3720,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       el.style.setProperty("--interactive-accent-hover", `hsl(${h}, ${s}%, ${Math.min(95, l + 6)}%)`);
       el.style.setProperty("--text-accent", `hsl(${h}, ${s}%, ${Math.min(90, l + 10)}%)`);
       el.style.setProperty("--text-accent-hover", `hsl(${h}, ${s}%, ${Math.min(95, l + 16)}%)`);
+      el.style.setProperty("--text-on-accent", textOn(hex));
     }
   }
 

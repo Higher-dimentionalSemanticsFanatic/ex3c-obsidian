@@ -1763,3 +1763,9 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .life-os-palette-preview-inner { zoom: 0.55; padding: 12px; }
 .life-os-edit-note { color: var(--text-muted); }
 .life-os-area-all { margin-top: 10px; border-top: 1px solid var(--background-modifier-border); padding-top: 6px; } .life-os-area-all h3 { margin: 4px 0; font-size: 1em; } .life-os-area-all h4 { margin: 10px 0 4px; font-size: var(--font-ui-small); color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+
+/* quick colour dots next to a colour picker in Configure */
+.life-os-dots { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.life-os-dot { width: 20px; height: 20px; min-width: 20px; padding: 0 !important; border-radius: 50%; background: var(--sw) !important; border: 2px solid var(--background-primary) !important; box-shadow: 0 0 0 1px var(--background-modifier-border) !important; }
+.life-os-dot.is-active { box-shadow: 0 0 0 2px var(--text-normal) !important; }
+@media (hover: none) { .life-os-dot { width: 28px; height: 28px; min-width: 28px; } }
