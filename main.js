@@ -799,7 +799,7 @@ const WIDGETS = [
  {
   "id": "proto.workschedule",
   "label": "Work schedule",
-  "desc": "Your working hours per weekday and your commute; the planner keeps work and commute free of tasks and shows them behind the week view.",
+  "desc": "Your working hours per weekday and your commute: blocks in the planner that tasks are planned around, also written to 10 Areas/Work/Work schedule for Day Planner.",
   "from": "Prototype"
  },
  {
@@ -3678,7 +3678,16 @@ module.exports = class LifeOSPlugin extends Plugin {
       void this.activateView();
       // calendar links (Import calendars): refresh the ones older than six hours, quietly, a little after start-up
       window.setTimeout(() => void this.refreshCalendars(false), 15000);
+      // the Work schedule as dated lines in 10 Areas/Work/Work schedule.md (for Day Planner): now, after every
+      // change to the Ideal Week, and when the date changes while Obsidian stays open
+      window.setTimeout(() => void this.syncWorkNote(), 5000);
     });
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (file?.path !== "03 Planning/Ideal Week.md") return;
+      window.clearTimeout(this.workNoteTimer);
+      this.workNoteTimer = window.setTimeout(() => void this.syncWorkNote(), 1500);
+    }));
+    this.registerInterval(window.setInterval(() => { if (this.workNoteDay !== moment().format("YYYY-MM-DD")) void this.syncWorkNote(); }, 60 * 60 * 1000));
     this.addCommand({ id: "refresh-calendars", name: "Refresh calendar links", callback: () => void this.refreshCalendars(true) });
     this.setupRollup();
   }
@@ -3838,6 +3847,17 @@ module.exports = class LifeOSPlugin extends Plugin {
     try { await api.executeJs(`await dv.view("Prototypes/Calendar/views/ics", { refresh: ${force ? "\"all\"" : "\"stale\""} })`, host, component, LAYOUT_PATH); }
     catch (error) { console.warn("EX3C AgendA: calendar refresh", error); }
     finally { window.setTimeout(() => component.unload(), 60000); }
+  }
+
+  async syncWorkNote() {
+    const api = this.app.plugins?.plugins?.dataview?.api;
+    if (!api?.executeJs || !this.app.vault.getAbstractFileByPath("Prototypes/Planner/views/worknote.js")) return;
+    this.workNoteDay = moment().format("YYYY-MM-DD");
+    const host = document.createElement("div"), component = new Component();
+    component.load();
+    try { await api.executeJs(`await dv.view("Prototypes/Planner/views/worknote")`, host, component, LAYOUT_PATH); }
+    catch (error) { console.warn("EX3C AgendA: work schedule note", error); }
+    finally { window.setTimeout(() => component.unload(), 10000); }
   }
 
   aiOn() {
