@@ -720,7 +720,7 @@ const WIDGETS = [
  {
   "id": "library.shelf",
   "label": "Library shelf",
-  "desc": "Typed library notes, filtered by type and status, with local covers.",
+  "desc": "Every folder in 07 Library as a book on a shelf; open one to see its notes and PDFs.",
   "from": "Library"
  },
  {
@@ -1414,7 +1414,7 @@ class LifeOSHomeView extends ItemView {
       case "people.discuss": return this.renderCollectionLive(parent, { ...COLLECTIONS.people, discussionOnly: true });
       case "create.studio": return this.renderPipelineLive(parent, "studio");
       case "create.lanes": return this.renderPipelineLive(parent, "lanes");
-      case "library.shelf": return this.renderCollectionLive(parent, COLLECTIONS.library);
+      case "library.shelf": return this.renderBookshelf(parent);
       case "brain.graph": return this.renderBrainEmbedded(parent);
       case "ai.control": return this.renderAiLive(parent, "checks");
       case "ai.diagram": return this.renderAiLive(parent, "diagram");
@@ -2368,6 +2368,72 @@ class LifeOSHomeView extends ItemView {
     const slug = this.getFileTitle(file).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const tag = `#${prefix}/${slug}`;
     return (this.taskSnapshot?.tasks || []).filter(task => task.path === file.path || task.text.split(/\s+/).includes(tag));
+  }
+
+  // The Library as a bookshelf: every folder in 07 Library is a book on the shelf. Open a book to see what is inside:
+  // its own folders stand on a smaller shelf, its notes and files are listed below; click one to open it.
+  renderBookshelf(parent) {
+    const ROOT = "07 Library";
+    const rootFolder = this.app.vault.getAbstractFileByPath(ROOT);
+    const section = parent.createEl("section", { cls: "life-os-collection-live ex3c-shelf" });
+    if (!rootFolder || !Array.isArray(rootFolder.children)) {
+      this.renderLiveHeading(section, "Library shelf", "Every folder in 07 Library is a book.", "0 books");
+      section.createDiv({ cls: "life-os-live-empty", text: "There is no 07 Library folder yet. Make it, then put a folder in it for each book or collection." });
+      return;
+    }
+    let here = this.app.vault.getAbstractFileByPath(this.shelfPath || ROOT);
+    if (!here || !Array.isArray(here.children) || !(here.path === ROOT || here.path.startsWith(`${ROOT}/`))) here = rootFolder;
+    this.shelfPath = here.path;
+    const isFolder = (f) => Array.isArray(f.children);
+    const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+    const countFiles = (folder) => folder.children.reduce((n, c) => n + (isFolder(c) ? countFiles(c) : 1), 0);
+    const books = here.children.filter(isFolder).sort(byName);
+    const files = here.children.filter((c) => !isFolder(c)).sort(byName);
+    const atRoot = here.path === ROOT;
+    this.renderLiveHeading(section, atRoot ? "Library shelf" : here.name, atRoot ? "Every folder in 07 Library is a book. Open one to see what is inside." : `${countFiles(here)} file${countFiles(here) === 1 ? "" : "s"} in this book.`, books.length || atRoot ? `${books.length} book${books.length === 1 ? "" : "s"}` : `${files.length} file${files.length === 1 ? "" : "s"}`);
+    // where you are: Library › HG Worksheets › ADHD
+    const crumbs = section.createDiv({ cls: "ex3c-shelf-crumbs" });
+    const parts = atRoot ? [] : here.path.split("/");
+    parts.forEach((name, i) => {
+      const path = parts.slice(0, i + 1).join("/");
+      if (i) crumbs.createSpan({ text: " › " });
+      const b = crumbs.createEl("button", { cls: i === parts.length - 1 ? "is-here" : "", text: i ? name : "Library" });
+      b.type = "button";
+      this.registerDomEvent(b, "click", () => { this.shelfPath = path; this.render(); });
+    });
+    // the shelf: one spine per folder, its colour and height from its name and size
+    const hue = (name) => [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
+    if (books.length) {
+      const shelf = section.createDiv({ cls: "ex3c-shelf-row" });
+      for (const book of books) {
+        const n = countFiles(book), h = hue(book.name);
+        const spine = shelf.createEl("button", { cls: "ex3c-book", attr: { title: `${book.name}: ${n} file${n === 1 ? "" : "s"}`, style: `--h:${h};height:${Math.min(176, 118 + n * 6)}px;width:${Math.min(58, 34 + Math.round(book.name.length / 2))}px` } });
+        spine.type = "button";
+        spine.createSpan({ cls: "ex3c-book-title", text: book.name });
+        spine.createSpan({ cls: "ex3c-book-count", text: String(n) });
+        this.registerDomEvent(spine, "click", () => { this.shelfPath = book.path; this.render(); });
+      }
+      section.createDiv({ cls: "ex3c-shelf-plank" });
+    } else if (atRoot) {
+      section.createDiv({ cls: "life-os-live-empty", text: "No books yet: make a folder in 07 Library for each book or collection, and it stands here." });
+    }
+    // what lies in this folder: notes, PDFs, images
+    if (files.length) {
+      section.createEl("h3", { cls: "ex3c-shelf-sub", text: atRoot ? "Loose pages" : "Inside" });
+      const list = section.createDiv({ cls: "ex3c-shelf-files" });
+      const ICON = { md: "file-text", pdf: "file-type-2", png: "image", jpg: "image", jpeg: "image", webp: "image", gif: "image", canvas: "layout-dashboard", epub: "book" };
+      for (const file of files) {
+        const row = list.createEl("button", { cls: "ex3c-shelf-file" });
+        row.type = "button";
+        setIcon(row.createSpan({ cls: "ex3c-shelf-ico" }), ICON[String(file.extension).toLowerCase()] || "file");
+        row.createSpan({ text: file.extension === "md" ? file.basename : file.name });
+        const status = file.extension === "md" ? String(this.getFrontmatter(file).status || "") : "";
+        if (status) row.createSpan({ cls: "life-os-progress-chip", text: status });
+        this.registerDomEvent(row, "click", () => void this.app.workspace.getLeaf(false).openFile(file));
+      }
+    } else if (!atRoot && !books.length) {
+      section.createDiv({ cls: "life-os-live-empty", text: "This book is empty. Put notes or PDFs in its folder." });
+    }
   }
 
   renderLiveHeading(parent, title, description, status) {

@@ -1769,3 +1769,22 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .life-os-dot { width: 20px; height: 20px; min-width: 20px; padding: 0 !important; border-radius: 50%; background: var(--sw) !important; border: 2px solid var(--background-primary) !important; box-shadow: 0 0 0 1px var(--background-modifier-border) !important; }
 .life-os-dot.is-active { box-shadow: 0 0 0 2px var(--text-normal) !important; }
 @media (hover: none) { .life-os-dot { width: 28px; height: 28px; min-width: 28px; } }
+
+/* Library shelf: folders in 07 Library as books on a shelf */
+.ex3c-shelf-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 4px 0 10px; font-size: 13px; color: var(--text-muted); }
+.ex3c-shelf-crumbs button { background: none !important; box-shadow: none !important; border: 0 !important; padding: 2px 4px !important; height: auto; color: var(--text-accent); cursor: pointer; }
+.ex3c-shelf-crumbs button.is-here { color: var(--text-normal); font-weight: 600; cursor: default; }
+.ex3c-shelf-row { display: flex; align-items: flex-end; gap: 4px; flex-wrap: wrap; padding: 12px 14px 0; min-height: 60px; }
+.ex3c-book { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 0 8px !important; border-radius: 4px 4px 2px 2px !important; border: 0 !important; cursor: pointer;
+  background: linear-gradient(90deg, hsl(var(--h) 38% 30%) 0%, hsl(var(--h) 42% 42%) 18%, hsl(var(--h) 40% 36%) 82%, hsl(var(--h) 38% 26%) 100%) !important;
+  box-shadow: inset 0 10px 0 -6px hsl(var(--h) 50% 62% / .55), inset 0 -12px 0 -8px hsl(var(--h) 50% 62% / .45), 0 1px 2px rgba(0,0,0,.35) !important; transition: transform .12s ease; }
+.ex3c-book:hover { transform: translateY(-6px); }
+.ex3c-book-title { writing-mode: vertical-rl; transform: rotate(180deg); color: hsl(var(--h) 30% 94%); font-size: 12px; font-weight: 600; letter-spacing: .02em; max-height: calc(100% - 26px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex3c-book-count { font-size: 10px; color: hsl(var(--h) 25% 85%); font-variant-numeric: tabular-nums; }
+.ex3c-shelf-plank { height: 12px; margin: 0 4px 14px; border-radius: 2px; background: linear-gradient(180deg, #8a6440 0%, #6e4e31 60%, #523a24 100%); box-shadow: 0 6px 10px -6px rgba(0,0,0,.6); }
+.ex3c-shelf-sub { margin: 6px 0 4px; font-size: 14px; }
+.ex3c-shelf-files { display: flex; flex-direction: column; gap: 2px; }
+.ex3c-shelf-file { display: flex !important; align-items: center; gap: 8px; justify-content: flex-start !important; width: 100%; text-align: left; height: auto; padding: 6px 8px !important; background: none !important; box-shadow: none !important; border: 1px solid transparent !important; border-radius: 6px !important; cursor: pointer; }
+.ex3c-shelf-file:hover { background: var(--background-modifier-hover) !important; }
+.ex3c-shelf-ico { display: inline-flex; color: var(--text-muted); }
+.ex3c-shelf-file .life-os-progress-chip { margin-left: auto; }
