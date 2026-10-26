@@ -130,6 +130,12 @@ const CAPTURE_MENU_ACTIONS = [
     command: "quickadd:choice:lifeos-new-project",
   },
   {
+    icon: "graduation-cap",
+    label: "New course",
+    description: "Create a course note (exam, term, lectures) from its template.",
+    command: "quickadd:choice:lifeos-new-course",
+  },
+  {
     icon: "user-plus",
     label: "New person",
     description: "Create a private relationship note from its template.",
@@ -522,7 +528,6 @@ const COLLECTIONS = {
 
 // ---------- layout: tabs and widgets, stored in a vault note ----------
 const LAYOUT_PATH = "Meta/EX3C Agenda Layout.md";
-const LAYOUT_SEED_PATH = "Prototypes/EX3C Agenda Layout/Layout.md";
 // The name shown in the app (rail, header, tab title). You can change it in Configure; it is saved in the layout note.
 const DEFAULT_APP_NAME = "EX3C AgendA";
 // Your own widgets: every .js file in this folder is a DataviewJS view that shows up in the Widgets panel.
@@ -776,67 +781,67 @@ const WIDGETS = [
   "id": "proto.planner",
   "label": "Planner",
   "desc": "Next steps, one-click scheduling, week capacity, today by the clock.",
-  "from": "Prototype"
+  "from": "Home"
  },
  {
   "id": "proto.sequence",
   "label": "Project steps",
   "desc": "Pick projects; see each as Gantt charts (one per heading) or as numbered steps with the next step and time left.",
-  "from": "Prototype"
+  "from": "Projects"
  },
  {
   "id": "proto.capture",
   "label": "Quick capture box",
   "desc": "Type a task the way you say it; dates, times, length, priority and project become task fields.",
-  "from": "Prototype"
+  "from": "Home"
  },
  {
   "id": "proto.projectboard",
   "label": "Projects board",
   "desc": "Every project note as a card in the column of its status (Idea, Active, Paused, Done); drag or pick a status to change it; + Idea makes a new project note.",
-  "from": "Prototype"
+  "from": "Projects"
  },
  {
   "id": "proto.workschedule",
   "label": "Work schedule",
   "desc": "Your working hours per weekday and your commute: blocks in the planner that tasks are planned around, also written to 10 Areas/Work/Work schedule for Day Planner.",
-  "from": "Prototype"
+  "from": "Work"
  },
  {
   "id": "proto.birthdays",
   "label": "Birthdays",
   "desc": "Coming birthdays from the birthday property of your people notes, with the age they turn; Present adds a task a week before.",
-  "from": "Prototype"
+  "from": "People"
  },
  {
   "id": "proto.triage",
   "label": "Inbox to sort",
   "desc": "Every task waiting in the inbox with three buttons: Today (⏳ today), Soon (moves it under ## Soon, to plan within a month), Eventually (moves it under ## Eventually).",
-  "from": "Prototype"
+  "from": "Home"
  },
  {
   "id": "proto.checklists",
   "label": "Checklists",
   "desc": "Reusable checklists (packing list, routines): progress, tick items, Reset to untick them for next time.",
-  "from": "Prototype"
+  "from": "Home"
  },
  {
   "id": "proto.courses",
   "label": "Courses",
   "desc": "Each course: exam countdown, next deadline, progress, this week's study time; then study deadlines in the next four weeks.",
-  "from": "Prototype"
+  "from": "Study"
  },
  {
   "id": "proto.modules",
   "label": "Optional modules",
   "desc": "Remove parts of the standard vault you do not use (wiki, retreats, writing, prompts and AI, examples); shows the list and moves it to .trash.",
-  "from": "Prototype"
+  "from": "Setup"
  },
  {
   "id": "proto.purchases",
   "label": "Purchases",
   "desc": "Every priced task across projects, grouped by shop.",
-  "from": "Prototype"
+  "from": "Projects"
  }
 ];
 const WIDGET_BY_ID = new Map(WIDGETS.map((widget) => [widget.id, widget]));
@@ -1418,17 +1423,17 @@ class LifeOSHomeView extends ItemView {
       case "capture.quick": return this.renderActionSection(parent, "Quick capture", "Journal, wins, gratitude, and tasks.", CAPTURE_MENU_ACTIONS.slice(0, 4), run);
       case "capture.ideas": return this.renderActionSection(parent, "Ideas", "Drop an idea onto a board.", CAPTURE_MENU_ACTIONS.slice(4, 8), run);
       case "capture.create": return this.renderActionSection(parent, "Create notes", "New notes from their templates.", CAPTURE_MENU_ACTIONS.slice(8), run);
-      case "proto.planner": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/planner", { folders: [""], area: ${JSON.stringify(this.tabArea())} });`);
-      case "proto.sequence": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/sequence", { allProjects: true, area: ${JSON.stringify(this.tabArea())} });`);
-      case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Quick Capture/views/capture", { area: ${JSON.stringify(this.tabArea())} });`);
-      case "proto.projectboard": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Projects/views/board", { area: ${JSON.stringify(this.tabArea())} });`);
-      case "proto.workschedule": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/workschedule");`);
-      case "proto.birthdays": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/People/views/birthdays");`);
-      case "proto.triage": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Planner/views/triage");`);
-      case "proto.checklists": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Checklists/views/checklists", { folder: "09 Checklists" });`);
-      case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Study/views/courses");`);
-      case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Modules/views/modules");`);
-      case "proto.purchases": return this.renderDataviewWidget(parent, `await dv.view("Prototypes/Task Properties/views/purchases", { currency: "EUR", area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.planner": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/planner", { folders: [""], area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.sequence": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/project-steps", { allProjects: true, area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.capture": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/capture", { area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.projectboard": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/projects-board", { area: ${JSON.stringify(this.tabArea())} });`);
+      case "proto.workschedule": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/workschedule");`);
+      case "proto.birthdays": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/birthdays");`);
+      case "proto.triage": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/triage");`);
+      case "proto.checklists": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/checklists", { folder: "09 Checklists" });`);
+      case "proto.courses": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/courses");`);
+      case "proto.modules": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/modules");`);
+      case "proto.purchases": return this.renderDataviewWidget(parent, `await dv.view("Meta/views/purchases", { currency: "EUR", area: ${JSON.stringify(this.tabArea())} });`);
       default: {
         if (id.startsWith("user:")) return this.renderDataviewWidget(parent, `await dv.view(${JSON.stringify(`${USER_WIDGET_DIR}/${id.slice(5)}`)}, { area: ${JSON.stringify(this.tabArea())} });`);
         const moduleId = id.endsWith(".actions") ? id.slice(0, -".actions".length) : null;
@@ -3527,7 +3532,7 @@ class LifeOSWidgetPaletteView extends ItemView {
           this.registerDomEvent(pv, "click", (event) => { event.stopPropagation(); if (open) this.previewing.delete(widget.id); else this.previewing.add(widget.id); this.render(); });
         }
         item.createDiv({ cls: "life-os-palette-desc", text: widget.desc });
-        item.createDiv({ cls: "life-os-palette-meta", text: onTabs.length ? `On ${onTabs.map((t) => t.label).join(", ")}` : widget.from === "Prototype" ? "Not on a tab · prototype" : "Not on a tab" });
+        item.createDiv({ cls: "life-os-palette-meta", text: onTabs.length ? `On ${onTabs.map((t) => t.label).join(", ")}` : "Not on a tab" });
         if (this.previewing.has(widget.id) && home instanceof LifeOSHomeView) {
           // a live, read-only preview drawn from your own notes, scaled down
           const frame = item.createDiv({ cls: "life-os-palette-preview", attr: { inert: "", "aria-hidden": "true" } });
@@ -3841,21 +3846,21 @@ module.exports = class LifeOSPlugin extends Plugin {
   // Runs the Import calendars view without showing it, so its links are refreshed (all of them when forced).
   async refreshCalendars(force) {
     const api = this.app.plugins?.plugins?.dataview?.api;
-    if (!api?.executeJs || !this.app.vault.getAbstractFileByPath("Prototypes/Calendar/views/ics.js")) return;
+    if (!api?.executeJs || !this.app.vault.getAbstractFileByPath("Meta/views/calendars.js")) return;
     const host = document.createElement("div"), component = new Component();
     component.load();
-    try { await api.executeJs(`await dv.view("Prototypes/Calendar/views/ics", { refresh: ${force ? "\"all\"" : "\"stale\""} })`, host, component, LAYOUT_PATH); }
+    try { await api.executeJs(`await dv.view("Meta/views/calendars", { refresh: ${force ? "\"all\"" : "\"stale\""} })`, host, component, LAYOUT_PATH); }
     catch (error) { console.warn("EX3C AgendA: calendar refresh", error); }
     finally { window.setTimeout(() => component.unload(), 60000); }
   }
 
   async syncWorkNote() {
     const api = this.app.plugins?.plugins?.dataview?.api;
-    if (!api?.executeJs || !this.app.vault.getAbstractFileByPath("Prototypes/Planner/views/worknote.js")) return;
+    if (!api?.executeJs || !this.app.vault.getAbstractFileByPath("Meta/views/worknote.js")) return;
     this.workNoteDay = moment().format("YYYY-MM-DD");
     const host = document.createElement("div"), component = new Component();
     component.load();
-    try { await api.executeJs(`await dv.view("Prototypes/Planner/views/worknote")`, host, component, LAYOUT_PATH); }
+    try { await api.executeJs(`await dv.view("Meta/views/worknote")`, host, component, LAYOUT_PATH); }
     catch (error) { console.warn("EX3C AgendA: work schedule note", error); }
     finally { window.setTimeout(() => component.unload(), 10000); }
   }
@@ -3950,7 +3955,7 @@ module.exports = class LifeOSPlugin extends Plugin {
 
   async loadLayout() {
     let text = null;
-    for (const path of [LAYOUT_PATH, LAYOUT_SEED_PATH]) {
+    for (const path of [LAYOUT_PATH]) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile) { text = await this.app.vault.read(file); break; }
     }
