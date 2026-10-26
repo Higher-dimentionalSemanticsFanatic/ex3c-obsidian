@@ -11,7 +11,11 @@ This repository is private. Two ways in:
 - `Meta/EX3C Agenda Layout.md`: the tabs and their widgets (made on first use, edited with Configure).
 - `Meta/EX3C Agenda Config.md`: daily questions, habits and folders.
 - `Meta/widgets/*.js`: your own widgets (optional).
-- Dataview with JavaScript queries on. The prototype widgets still load their views from the vault's `Prototypes/` folder; they move into the plugin as they graduate.
+- Dataview with JavaScript queries on: the widgets are DataviewJS views.
+- `Meta/views/<name>.js`: stubs that let notes embed a widget with `dv.view("Meta/views/<name>")`. A file there that is not a stub is your own copy and runs instead of the built-in code.
+
+## Widgets
+The widget code lives in `views/` (see `views/README.md`) and is bundled into `main.js` with `node scripts/bundle-views.mjs`, so an update of the plugin updates the widgets. Edit `views/`, never the generated block at the end of `main.js`; the release workflow checks that the block is current. In Obsidian, **Edit widget code** copies a widget into the vault for your own changes and **Reset widget to built-in** goes back.
 
 ## Release
 Raise `version` in `manifest.json`, add it to `versions.json` with the minimum Obsidian version, note it in `CHANGELOG.md`, commit, then tag the commit with the same version and push the tag. The release workflow attaches the files.
