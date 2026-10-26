@@ -1788,3 +1788,38 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .ex3c-shelf-file:hover { background: var(--background-modifier-hover) !important; }
 .ex3c-shelf-ico { display: inline-flex; color: var(--text-muted); }
 .ex3c-shelf-file .life-os-progress-chip { margin-left: auto; }
+
+/* Configure > Areas: the area manager */
+.life-os-areas { margin: 10px 0; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
+.life-os-areas-head { display: flex; flex-direction: column; gap: 2px; }
+.life-os-areas-head span { color: var(--text-muted); }
+.life-os-area-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px; border-radius: 8px; border-left: 4px solid var(--sw); background: color-mix(in srgb, var(--sw) 8%, var(--background-primary)); }
+.life-os-area-row.is-off { opacity: .6; border-left-style: dashed; background: var(--background-secondary); }
+.life-os-area-main { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; min-width: 0; }
+.life-os-area-swatch { width: 28px; height: 28px; min-width: 28px; padding: 0 !important; border-radius: 50%; background: var(--sw) !important; border: 2px solid var(--background-primary) !important; box-shadow: 0 0 0 1px var(--background-modifier-border) !important; flex: none; }
+.life-os-area-swatch.is-open { box-shadow: 0 0 0 2px var(--text-normal) !important; }
+.life-os-area-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.life-os-area-name strong { font-size: 14px; }
+.life-os-area-tag { color: var(--text-muted); font-family: var(--font-monospace); }
+.life-os-area-role { font-size: 11px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--sw) 25%, transparent); color: var(--text-muted); }
+.life-os-area-switch { display: inline-flex; align-items: center; gap: 4px; flex: none; cursor: pointer; }
+.life-os-area-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.life-os-area-actions button { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; height: auto; min-height: 26px; }
+.life-os-area-actions svg { width: 14px; height: 14px; }
+.life-os-area-colours { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.life-os-area-colours label { display: inline-flex; align-items: center; gap: 4px; }
+.life-os-area-colours input[type=color] { width: 30px; height: 26px; padding: 0; border: none; background: none; }
+.life-os-areas-undo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-muted); }
+.life-os-area-new { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding-top: 4px; border-top: 1px dashed var(--background-modifier-border); }
+.life-os-area-new input[type=text] { flex: 1 1 200px; min-width: 0; }
+.life-os-area-new input[type=color] { width: 30px; height: 26px; padding: 0; border: none; background: none; }
+.life-os-area-hint { color: var(--text-muted); }
+.life-os-area-new .life-os-area-hint { flex-basis: 100%; order: 3; }
+.life-os-edit-tab.is-off { opacity: .5; border-style: dashed; cursor: default; }
+.life-os-area-rename input[type=text] { width: 100%; font-size: 16px; margin-bottom: 8px; }
+.life-os-area-rename .life-os-area-what ul, .life-os-area-list ul { margin: 4px 0 8px; padding-left: 20px; }
+.life-os-area-keyrow { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; }
+.life-os-area-list { margin-bottom: 8px; }
+.life-os-area-list ul { max-height: 30vh; overflow: auto; font-size: 12px; font-family: var(--font-monospace); }
+.life-os-area-list.is-hidden { display: none; }
+@media (hover: none) { .life-os-area-actions button { min-height: 34px; } .life-os-area-swatch { width: 34px; height: 34px; min-width: 34px; } }

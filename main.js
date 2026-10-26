@@ -850,15 +850,26 @@ const DEFAULT_LAYOUT = {"tabs": [{"id": "home", "label": "Home", "widgets": ["pr
 // which never reached saved layouts). A widget added to the default later is put on the saved layout's matching tab once.
 const LEGACY_KNOWN = ["ai.actions", "ai.control", "ai.diagram", "ai.principle", "ai.system", "brain.graph", "focus.actions", "focus.commitments", "focus.feed", "focus.groups", "home.brain", "home.capture", "home.hero", "home.horizons", "home.now", "home.setup", "home.signals", "library.actions", "library.shelf", "people.actions", "people.directory", "people.discuss", "plan.actions", "plan.horizons", "projects.actions", "projects.pulse", "proto.checklists", "proto.courses", "proto.planner", "proto.projectboard", "proto.purchases", "proto.sequence", "review.actions", "review.areas", "review.calendar", "review.effort", "review.habits", "review.week", "today.actions", "today.attention", "today.glance"];
 const SIDE_WIDGETS = new Set(["home.brain"]);
-// Areas: a tab can be tied to one. A task belongs to an area by its #work/#study/#personal tag,
+// Areas: a tab can be tied to one. A task belongs to an area by its #<area> tag (#work, #study, ...),
 // otherwise by the area property of the note it lives in (for example a project note's area: study).
-const AREAS = ["work", "study", "personal"];
+// The list comes from the area notes (type: area, read by loadAreas): each note holds its area key, colour and
+// enabled switch. These three stand in until the notes are read, and for a vault without area notes.
+const DEFAULT_AREAS = ["work", "study", "personal"];
+let AREAS = [...DEFAULT_AREAS]; // the enabled area keys
+let AREA_COLORS = {}; // key -> colour, from the area notes
+const AREA_ROOT = "10 Areas";
+// Work and Study are standard areas: the Work schedule (#work) and courses (10 Areas/Study) are built on them, so they
+// keep their name, tag and folder; like every area they can be switched off.
+const LOCKED_AREAS = ["work", "study"];
+const AREA_ICONS = { work: "briefcase", study: "graduation-cap", personal: "user" };
+const AREA_WIDGETS = ["today.attention", "proto.planner", "proto.sequence"];
+const areaSlug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 // The AI module counts as on while either of these exists (the Optional modules widget removes and restores them).
 const AI_MODULE_PATHS = ["Prompts", "00 Dashboards/Assistant.md"];
 // Optional modules the workflow canvas shows: each counts as removed when none of its paths are left.
 const MAP_MODULE_PATHS = { ai: AI_MODULE_PATHS, retreats: ["02 Retreats"], writing: ["06 Writing"] };
 const WORKFLOW_CANVAS = "Guide/Workflow Map.canvas";
-const AREA_TAG_RE = /(^|\s)#(work|study|personal)(?=\s|$)/i;
+let AREA_TAG_RE = /(^|\s)#(work|study|personal)(?=\s|$)/i; // rebuilt from the enabled areas
 // Folders that hold no real tasks for the feed (templates, docs, prompts, settings, the knowledge layer).
 const TASK_EXCLUDED = ["Templates/", "scripts/", "wiki/", "Guide/", "Prompts/", "Meta/", ".trash/"];
 const TAB_ICONS = Object.fromEntries(NAV_ITEMS.map((item) => [item.id, item.icon]));
@@ -908,11 +919,15 @@ function normalizeTheme(raw) {
   const t = raw && typeof raw === "object" ? raw : {};
   const preset = THEME_PRESETS[t.preset] ? t.preset : "default";
   const areas = {};
-  for (const a of AREAS) areas[a] = HEX.test(t.areas?.[a]) ? t.areas[a] : DEFAULT_AREA_COLORS[a];
+  // area colours live in the area notes now; colours saved here before are still read for notes without one
+  for (const [a, c] of Object.entries(t.areas && typeof t.areas === "object" ? t.areas : {})) if (HEX.test(c)) areas[a] = c;
+  for (const a of DEFAULT_AREAS) areas[a] ??= DEFAULT_AREA_COLORS[a];
   return { preset, areas, areaTint: t.areaTint !== false };
 }
 function themeAccent(theme, area) {
-  return area && theme.areas[area] ? theme.areas[area] : THEME_PRESETS[theme.preset] || THEME_PRESETS.default;
+  // a switched-off area has no colour: its pages and notes take the theme
+  const own = area && AREAS.includes(area) ? AREA_COLORS[area] || theme.areas[area] : null;
+  return own || THEME_PRESETS[theme.preset] || THEME_PRESETS.default;
 }
 // A tab's one colour, used everywhere it shows (rail, page, Configure): its own colour, else its area's, else the theme.
 function tabAccent(theme, tab) {
@@ -931,7 +946,8 @@ function normalizeLayout(raw) {
     // The same widget may sit on several tabs (an area tab and a shared tab), but only once per tab.
     // home.horizons was the same widget as plan.horizons under a second name
     const widgets = [...new Set((Array.isArray(tab.widgets) ? tab.widgets : []).map(String).map((w) => ({ "home.horizons": "plan.horizons", "capture.quick": "home.capture" })[w] || w).filter((w) => WIDGET_BY_ID.has(w)))];
-    const area = AREAS.includes(String(tab.area || "").toLowerCase()) ? String(tab.area).toLowerCase() : null;
+    // any area key is kept, also one whose note is missing or switched off, so the tab comes back with it
+    const area = areaSlug(tab.area) || null;
     const color = HEX.test(String(tab.color || "")) ? String(tab.color) : null;
     tabs.push({ id, label: String(tab.label || id), ...(tab.icon ? { icon: String(tab.icon) } : {}), ...(area ? { area } : {}), ...(color ? { color } : {}), widgets });
   }
@@ -1095,7 +1111,8 @@ class LifeOSHomeView extends ItemView {
 
   currentTab() {
     const tabs = this.layout.tabs;
-    return tabs.find((tab) => tab.id === this.activeScreen) || tabs[0] || null;
+    const shown = (tab) => this.plugin.tabShown(tab);
+    return tabs.find((tab) => tab.id === this.activeScreen && shown(tab)) || tabs.find(shown) || tabs[0] || null;
   }
 
   render(force = false) {
@@ -1182,7 +1199,7 @@ class LifeOSHomeView extends ItemView {
     if (module) header.createSpan({ cls: "life-os-eyebrow", text: module.eyebrow });
     header.createEl("h1", { text: tab.label });
     if (module) header.createEl("p", { text: module.description });
-    if (tab.area) header.createEl("p", { cls: "life-os-area-note", text: `Showing ${tab.area} only: tasks tagged #${tab.area}, and notes whose area property is ${tab.area}.` });
+    if (tab.area) header.createEl("p", { cls: "life-os-area-note", text: `Showing ${this.plugin.areaName(tab.area)} only: tasks tagged #${tab.area}, and notes whose area property is ${tab.area}.` });
   }
 
   renderSlot(shell, tab, id, index) {
@@ -1244,8 +1261,10 @@ class LifeOSHomeView extends ItemView {
         window.setTimeout(() => { input.focus(); input.select(); }, 0);
         continue;
       }
-      chip.createSpan({ text: `${tab.label} (${tab.widgets.length})` });
-      this.registerDomEvent(chip, "click", () => { this.activeScreen = tab.id; this.render(true); this.plugin.refreshPalettes(); });
+      const off = !this.plugin.tabShown(tab);
+      chip.createSpan({ text: `${tab.label} (${tab.widgets.length})${off ? ", off" : ""}` });
+      if (off) { chip.addClass("is-off"); chip.setAttribute("title", tab.area ? `The ${this.plugin.areaName(tab.area)} area is switched off: switch it on under Areas to see this tab.` : "Hidden while the AI module is removed (Optional modules on Setup)."); }
+      this.registerDomEvent(chip, "click", () => { if (off) return; this.activeScreen = tab.id; this.render(true); this.plugin.refreshPalettes(); });
       const rename = chip.createSpan({ cls: "life-os-edit-tab-action", attr: { "aria-label": "Rename", title: "Rename" } });
       setIcon(rename, "pencil");
       this.registerDomEvent(rename, "click", (event) => { event.stopPropagation(); this.renamingTab = tab.id; this.render(true); });
@@ -1266,7 +1285,7 @@ class LifeOSHomeView extends ItemView {
       const areaRow = bar.createDiv({ cls: "life-os-edit-area" });
       const label = areaRow.createEl("label", { text: `Area for “${current.label}”: ` });
       const select = label.createEl("select", { cls: "dropdown", attr: { "aria-label": "Area for this tab" } });
-      for (const value of ["", ...AREAS]) select.createEl("option", { text: value ? value[0].toUpperCase() + value.slice(1) : "Everything", attr: { value } });
+      for (const value of ["", ...new Set([...AREAS, ...(current.area ? [current.area] : [])])]) select.createEl("option", { text: value ? this.plugin.areaName(value) : "Everything", attr: { value } });
       select.value = current.area || "";
       this.registerDomEvent(select, "change", () => void this.plugin.setTabArea(current.id, select.value || null));
       areaRow.createSpan({ text: "A tab with an area shows only that area's tasks, projects, and plans." });
@@ -1276,11 +1295,12 @@ class LifeOSHomeView extends ItemView {
       const themeNow = this.layout.theme || normalizeTheme(null);
       colorRow.createSpan({ text: `Colour for “${current.label}”:` });
       if (current.area) {
-        const lab = colorRow.createEl("label", { text: `${current.area[0].toUpperCase()}${current.area.slice(1)} area colour ` });
-        const input = lab.createEl("input", { attr: { type: "color", value: themeNow.areas[current.area], "aria-label": `${current.area} colour` } });
-        this.registerDomEvent(input, "change", () => void this.plugin.setTheme({ areas: { ...themeNow.areas, [current.area]: input.value } }));
-        this.colourDots(colorRow, themeNow.areas[current.area], (hex) => this.plugin.setTheme({ areas: { ...themeNow.areas, [current.area]: hex } }));
-        colorRow.createSpan({ cls: "life-os-edit-note", text: `Shared by every ${current.area} page and note.` });
+        const name = this.plugin.areaName(current.area), now = this.plugin.areaColor(current.area);
+        const lab = colorRow.createEl("label", { text: `${name} area colour ` });
+        const input = lab.createEl("input", { attr: { type: "color", value: now, "aria-label": `${name} colour` } });
+        this.registerDomEvent(input, "change", () => void this.plugin.setAreaColor(current.area, input.value));
+        this.colourDots(colorRow, now, (hex) => this.plugin.setAreaColor(current.area, hex));
+        colorRow.createSpan({ cls: "life-os-edit-note", text: `Shared by every ${name} page and note; kept in the area note.` });
       } else {
         const useTheme = colorRow.createEl("button", { cls: current.color ? "life-os-swatch" : "life-os-swatch is-active", attr: { style: `--sw:${themeAccent(themeNow, null)}` } });
         useTheme.type = "button";
@@ -1293,7 +1313,7 @@ class LifeOSHomeView extends ItemView {
       }
       const iconRow = bar.createDiv({ cls: "life-os-edit-icons" });
       iconRow.createSpan({ text: `Icon for “${current.label}”:` });
-      const currentIcon = current.icon || TAB_ICONS[current.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[current.area] || "layout-grid";
+      const currentIcon = current.icon || TAB_ICONS[current.id] || AREA_ICONS[current.area] || "layout-grid";
       for (const name of PAGE_ICONS) {
         const pick = iconRow.createEl("button", { cls: name === currentIcon ? "clickable-icon is-active" : "clickable-icon", attr: { "aria-label": name, title: name } });
         pick.type = "button";
@@ -1309,7 +1329,7 @@ class LifeOSHomeView extends ItemView {
       for (const std of missing) {
         const b = stdRow.createEl("button", { attr: { style: `--tab-accent:${tabAccent(this.layout.theme || normalizeTheme(null), std)}`, title: `Add ${std.label} back with its standard widgets` } });
         b.type = "button";
-        const ic = b.createSpan(); setIcon(ic, std.icon || TAB_ICONS[std.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[std.area] || "layout-grid");
+        const ic = b.createSpan(); setIcon(ic, std.icon || TAB_ICONS[std.id] || AREA_ICONS[std.area] || "layout-grid");
         b.createSpan({ text: ` + ${std.label}` });
         this.registerDomEvent(b, "click", () => void this.plugin.restoreTab(std.id));
       }
@@ -1330,20 +1350,16 @@ class LifeOSHomeView extends ItemView {
       sw.createSpan({ text: name });
       this.registerDomEvent(sw, "click", () => void this.plugin.setTheme({ preset: name }));
     }
+    this.renderAreaManager(bar);
     const areaColors = bar.createDiv({ cls: "life-os-edit-theme" });
-    areaColors.createSpan({ text: "Area colours (Work, Study, Personal pages and notes):" });
-    for (const a of AREAS) {
-      const lab = areaColors.createEl("label", { text: `${a[0].toUpperCase()}${a.slice(1)} ` });
-      const input = lab.createEl("input", { attr: { type: "color", value: theme.areas[a], "aria-label": `${a} colour` } });
-      this.registerDomEvent(input, "change", () => void this.plugin.setTheme({ areas: { ...theme.areas, [a]: input.value } }));
-    }
-    const tint = areaColors.createEl("label", { text: " Tint area pages " });
+    const tint = areaColors.createEl("label", { text: "Tint area pages " });
     const tintBox = tint.createEl("input", { attr: { type: "checkbox" } });
     tintBox.checked = theme.areaTint;
     this.registerDomEvent(tintBox, "change", () => void this.plugin.setTheme({ areaTint: tintBox.checked }));
     const resetColors = areaColors.createEl("button", { text: "Default colours" });
     resetColors.type = "button";
-    this.registerDomEvent(resetColors, "click", () => void this.plugin.setTheme({ preset: "default", areas: { ...DEFAULT_AREA_COLORS }, areaTint: true }));
+    resetColors.title = "Theme back to default and the tint on. Area colours stay: change them under Areas.";
+    this.registerDomEvent(resetColors, "click", () => void this.plugin.setTheme({ preset: "default", areaTint: true }));
     const actions = bar.createDiv({ cls: "life-os-edit-actions" });
     const button = (label, onClick, cta = false) => {
       const b = actions.createEl("button", { text: label, cls: cta ? "mod-cta" : "" });
@@ -1707,7 +1723,7 @@ class LifeOSHomeView extends ItemView {
       const button = nav.createEl("button", { cls: active ? "life-os-nav-button is-active" : "life-os-nav-button", attr: { "aria-current": active ? "page" : "false", title: tab.label, ...(own ? { "data-own-color": "", ...(tab.area ? { "data-area": tab.area } : {}) } : {}), style: `--tab-accent:${tabAccent(this.layout.theme || normalizeTheme(null), tab)}` } });
       button.type = "button";
       const icon = button.createSpan();
-      setIcon(icon, tab.icon || TAB_ICONS[tab.id] || { work: "briefcase", study: "graduation-cap", personal: "user" }[tab.area] || "layout-grid");
+      setIcon(icon, tab.icon || TAB_ICONS[tab.id] || AREA_ICONS[tab.area] || "layout-grid");
       button.createSpan({ text: tab.label });
       button.addEventListener("click", () => {
         this.activeScreen = tab.id;
@@ -2859,6 +2875,158 @@ class LifeOSHomeView extends ItemView {
   }
 
   // one click picks a theme colour; the colour input next to it still takes any other
+  // Configure > Areas: every area with its colour, name, tag and on/off switch; rename, open its note, make a new one.
+  renderAreaManager(bar) {
+    const plugin = this.plugin;
+    if (plugin.areaUndo === undefined) { try { plugin.areaUndo = JSON.parse(window.localStorage.getItem("ex3c-area-undo") || "null"); } catch (e) { plugin.areaUndo = null; } }
+    const box = bar.createDiv({ cls: "life-os-areas" });
+    const head = box.createDiv({ cls: "life-os-areas-head" });
+    head.createEl("strong", { text: "Areas" });
+    head.createSpan({ text: `Each area has a folder in ${AREA_ROOT}, an area note that keeps its colour and switch, and a tab. A task belongs to an area by its #tag, or by the area property of its note. Switching an area off hides its tab and colour; no note changes.` });
+    for (const a of plugin.areaList || []) {
+      const name = plugin.areaName(a.key);
+      const row = box.createDiv({ cls: a.enabled ? "life-os-area-row" : "life-os-area-row is-off", attr: { style: `--sw:${a.color}` } });
+      const main = row.createDiv({ cls: "life-os-area-main" });
+      // the colour: tap the swatch for the theme colours and a colour picker
+      const open = this.areaColourOpen === a.key;
+      const swatch = main.createEl("button", { cls: open ? "life-os-area-swatch is-open" : "life-os-area-swatch", attr: { type: "button", "aria-label": `${name} colour`, "aria-expanded": String(open), title: "Change the colour" } });
+      this.registerDomEvent(swatch, "click", () => { this.areaColourOpen = open ? null : a.key; this.render(true); });
+      const label = main.createDiv({ cls: "life-os-area-name" });
+      label.createEl("strong", { text: name });
+      label.createSpan({ cls: "life-os-area-tag", text: `#${a.key}` });
+      const standard = LOCKED_AREAS.includes(a.key);
+      if (standard) label.createSpan({ cls: "life-os-area-role", text: "Standard", attr: { title: a.key === "work" ? "A standard area: the Work schedule is built on #work, so it keeps its name and tag. Switch it off if you do not need it." : "A standard area: courses are built on #study and 10 Areas/Study, so it keeps its name and tag. Switch it off if you do not need it." } });
+      const tabs = this.layout.tabs.filter((t) => t.area === a.key);
+      if (!tabs.length) label.createSpan({ cls: "life-os-area-tag", text: "no tab" });
+      const sw = main.createEl("label", { cls: "life-os-area-switch", attr: { title: a.enabled ? "On: its tab and colour show" : "Off: its tab and colour are hidden" } });
+      const box2 = sw.createEl("input", { attr: { type: "checkbox", "aria-label": `${name} on` } });
+      box2.checked = a.enabled;
+      sw.createSpan({ text: a.enabled ? "On" : "Off" });
+      this.registerDomEvent(box2, "change", () => void plugin.setAreaEnabled(a.key, box2.checked));
+      const acts = row.createDiv({ cls: "life-os-area-actions" });
+      const act = (text, icon, fn, title) => {
+        const b = acts.createEl("button", { attr: { type: "button", title: title || text } });
+        const i = b.createSpan(); setIcon(i, icon);
+        b.createSpan({ text });
+        this.registerDomEvent(b, "click", fn);
+      };
+      if (!standard) act("Rename", "pencil", () => this.openAreaRename(a));
+      if (a.path) act("Note", "file-text", () => void this.openPath(a.path), `Open ${a.path}`);
+      if (!tabs.length && a.enabled) act("Add tab", "plus", async () => {
+        let id = a.key, n = 2;
+        while (this.layout.tabs.some((t) => t.id === id)) id = `${a.key}-${n++}`;
+        await plugin.changeLayout((layout) => layout.tabs.push({ id, label: name, area: a.key, icon: AREA_ICONS[a.key] || "layout-grid", widgets: [...AREA_WIDGETS] }));
+        this.activeScreen = id; this.render(true);
+      });
+      else if (tabs.length && a.enabled) act("Go", "arrow-right", () => { this.activeScreen = tabs[0].id; this.render(true); plugin.refreshPalettes(); }, `Show the ${name} tab`);
+      if (open) {
+        const colours = row.createDiv({ cls: "life-os-area-colours" });
+        this.colourDots(colours, a.color, (hex) => plugin.setAreaColor(a.key, hex));
+        const own = colours.createEl("label", { text: "Any colour " });
+        const pick = own.createEl("input", { attr: { type: "color", value: a.color, "aria-label": `${name} colour` } });
+        this.registerDomEvent(pick, "change", () => void plugin.setAreaColor(a.key, pick.value));
+      }
+    }
+    if (plugin.areaUndo) {
+      const u = plugin.areaUndo;
+      const row = box.createDiv({ cls: "life-os-areas-undo" });
+      row.createSpan({ text: `Last rename: ${u.name} to ${u.newName}${u.newKey !== u.key ? `, #${u.key} to #${u.newKey}` : ""}.` });
+      const b = row.createEl("button", { text: "Undo", attr: { type: "button" } });
+      this.registerDomEvent(b, "click", () => void plugin.undoAreaRename().then(() => this.render(true)));
+    }
+    // a new area
+    const used = new Set([...(plugin.areaList || []).map((a) => String(a.color).toLowerCase()), themeAccent(this.layout.theme || normalizeTheme(null), null).toLowerCase()]);
+    const free = Object.values(THEME_PRESETS).find((c) => !used.has(c)) || THEME_PRESETS.mono;
+    const add = box.createDiv({ cls: "life-os-area-new" });
+    const nameIn = add.createEl("input", { attr: { type: "text", placeholder: "New area, for example Health", "aria-label": "Name of the new area", maxlength: "40" } });
+    const colorIn = add.createEl("input", { attr: { type: "color", value: free, "aria-label": "Colour of the new area" } });
+    const hint = add.createSpan({ cls: "life-os-area-hint", text: "" });
+    const go = add.createEl("button", { text: "+ Add area", cls: "mod-cta", attr: { type: "button" } });
+    const update = () => {
+      const n = nameIn.value.replace(/[\\/:*?"<>|#^[\]]/g, "").trim(), key = areaSlug(n);
+      const taken = key && (plugin.areaList || []).some((a) => a.key === key);
+      hint.setText(!key ? `Makes ${AREA_ROOT}/<Name>/<Name>.md and a tab.` : taken ? `#${key} is already an area.` : `Makes ${AREA_ROOT}/${n}/${n}.md, the tag #${key}, and a ${n} tab.`);
+      go.disabled = !key || taken;
+    };
+    update();
+    this.registerDomEvent(nameIn, "input", update);
+    const create = async () => {
+      if (go.disabled) return;
+      const id = await plugin.createArea(nameIn.value, colorIn.value);
+      if (id) { this.activeScreen = id; this.render(true); plugin.refreshPalettes(); }
+    };
+    this.registerDomEvent(nameIn, "keydown", (e) => { if (e.key === "Enter") void create(); });
+    this.registerDomEvent(go, "click", () => void create());
+  }
+
+  // Rename an area: shows what would change (count and list) before anything is written.
+  openAreaRename(a) {
+    const plugin = this.plugin, view = this;
+    const oldName = plugin.areaName(a.key), locked = false;
+    const modal = new Modal(this.app);
+    modal.titleEl.setText(`Rename ${oldName}`);
+    const c = modal.contentEl;
+    c.addClass("life-os-area-rename");
+    const nameIn = c.createEl("input", { attr: { type: "text", value: oldName, "aria-label": "New name", maxlength: "40" } });
+    const what = c.createDiv({ cls: "life-os-area-what" });
+    let keyBox = null;
+    {
+      const lab = c.createEl("label", { cls: "life-os-area-keyrow" });
+      keyBox = lab.createEl("input", { attr: { type: "checkbox" } });
+      lab.createSpan({ cls: "life-os-area-keytext" });
+    }
+    const list = c.createEl("details", { cls: "life-os-area-list" });
+    const listSum = list.createEl("summary");
+    const ul = list.createEl("ul");
+    let uses = null;
+    const row = c.createDiv({ cls: "modal-button-container" });
+    const cancel = row.createEl("button", { text: "Cancel" });
+    const ok = row.createEl("button", { text: "Rename", cls: "mod-cta" });
+    const refresh = () => {
+      const n = nameIn.value.replace(/[\\/:*?"<>|#^[\]]/g, "").trim(), key = areaSlug(n);
+      const bits = [`the tab name: ${oldName} to ${n || "?"}`];
+      if (!locked && a.path) bits.push(`the folder and note: ${AREA_ROOT}/${n || "?"}/${n || "?"}.md (links to it follow)`);
+      what.empty();
+      what.createEl("p", { text: "Changes:" });
+      const w = what.createEl("ul");
+      for (const b of bits) w.createEl("li", { text: b });
+      let bad = !n;
+      if (keyBox) {
+        const same = key === a.key, taken = !same && (plugin.areaList || []).some((x) => x.key === key);
+        keyBox.disabled = same || !key || taken;
+        if (keyBox.disabled) keyBox.checked = false;
+        const count = uses ? `${uses.lines.length} line${uses.lines.length === 1 ? "" : "s"} tagged #${a.key} in ${new Set(uses.lines.map((l) => l.path)).size} note${new Set(uses.lines.map((l) => l.path)).size === 1 ? "" : "s"}, and ${uses.props.length} note${uses.props.length === 1 ? "" : "s"} with area: ${a.key}` : "counting...";
+        keyBox.parentElement.querySelector(".life-os-area-keytext").setText(same || !key ? `The tag stays #${a.key}.` : taken ? `#${key} is already an area, so the tag stays #${a.key}.` : `Also change the tag #${a.key} to #${key}: ${count}.`);
+        list.toggleClass("is-hidden", !keyBox.checked || !uses);
+      } else list.addClass("is-hidden");
+      ok.disabled = bad;
+      ok.setText(keyBox?.checked && uses ? `Rename and change ${uses.lines.length + uses.props.length} place${uses.lines.length + uses.props.length === 1 ? "" : "s"}` : "Rename");
+    };
+    void plugin.areaKeyUses(a.key).then((u) => {
+      uses = u;
+      listSum.setText(`Show the ${u.lines.length + u.props.length} places`);
+      for (const l of u.lines) ul.createEl("li", { text: `${l.path}:${l.line + 1}  ${l.before.trim().slice(0, 90)}` });
+      for (const p of u.props) ul.createEl("li", { text: `${p}  area: ${a.key}` });
+      refresh();
+    });
+    nameIn.addEventListener("input", refresh);
+    keyBox?.addEventListener("change", refresh);
+    cancel.addEventListener("click", () => modal.close());
+    const doIt = async () => {
+      if (ok.disabled) return;
+      ok.disabled = true;
+      modal.close();
+      await plugin.renameArea(a.key, nameIn.value, !!keyBox?.checked);
+      view.render(true);
+    };
+    ok.addEventListener("click", () => void doIt());
+    nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter") void doIt(); });
+    refresh();
+    modal.open();
+    window.setTimeout(() => { nameIn.focus(); nameIn.select(); }, 0);
+  }
+
+
   colourDots(parent, now, pick) {
     const row = parent.createSpan({ cls: "life-os-dots" });
     for (const [name, hex] of Object.entries(THEME_PRESETS)) {
@@ -3714,7 +3882,7 @@ module.exports = class LifeOSPlugin extends Plugin {
         id: `open-${id}`,
         name: `Open EX3C AgendA ${label}`,
         checkCallback: (checking) => {
-          if (!this.layout?.tabs?.some((t) => t.id === id) || (id === "ai" && !this.aiOn())) return false;
+          if (!this.layout?.tabs?.some((t) => t.id === id && this.tabShown(t))) return false;
           if (!checking) void this.activateView(id);
           return true;
         },
@@ -3744,6 +3912,7 @@ module.exports = class LifeOSPlugin extends Plugin {
       } catch (error) {
         console.error("EX3C AgendA could not load its layout; using the default tabs.", error);
       }
+      this.loadAreas();
       this.syncModuleState(false);
       this.applyAccent();
       void this.activateView();
@@ -3760,6 +3929,18 @@ module.exports = class LifeOSPlugin extends Plugin {
     }));
     this.registerInterval(window.setInterval(() => { if (this.workNoteDay !== moment().format("YYYY-MM-DD")) void this.syncWorkNote(); }, 60 * 60 * 1000));
     this.addCommand({ id: "refresh-calendars", name: "Refresh calendar links", callback: () => void this.refreshCalendars(true) });
+    // the area list follows the area notes: a new note, a changed colour or switch, a rename or a delete
+    const areasSoon = (file, oldPath) => {
+      const known = (p) => p && this.areaList?.some((a) => a.path === p);
+      const isArea = file?.extension === "md" && String(this.app.metadataCache.getFileCache(file)?.frontmatter?.type ?? "").toLowerCase() === "area";
+      if (!isArea && !known(file?.path) && !known(oldPath)) return;
+      window.clearTimeout(this.areaTimer);
+      this.areaTimer = window.setTimeout(() => { if (this.loadAreas()) { this.refreshViews(); this.applyAccent(); } }, 300);
+    };
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => areasSoon(file)));
+    this.registerEvent(this.app.vault.on("delete", (file) => areasSoon(file)));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => areasSoon(file, oldPath)));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => { if (!this.areasResolved) { this.areasResolved = true; if (this.loadAreas()) this.refreshViews(); } }));
     this.setupRollup();
   }
 
@@ -3985,7 +4166,235 @@ module.exports = class LifeOSPlugin extends Plugin {
   }
 
   widgetShown(id) { return !id.startsWith("ai.") || this.aiOn(); }
-  tabShown(tab) { return tab.id !== "ai" || this.aiOn(); }
+  // Areas: one area note per area (type: area), normally 10 Areas/<Name>/<Name>.md. Its area property is the key
+  // (the #tag and the area: value notes use), color its colour, enabled: false switches it off (its tab and colour
+  // hide; no note changes). Returns true when the list changed.
+  loadAreas() {
+    const list = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (TASK_EXCLUDED.some((p) => file.path.startsWith(p))) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm || String(fm.type ?? "").toLowerCase() !== "area") continue;
+      const key = areaSlug(fm.area || file.basename);
+      if (!key || list.some((a) => a.key === key)) continue;
+      list.push({ key, path: file.path, note: file.basename, color: HEX.test(String(fm.color ?? "")) ? String(fm.color) : null, enabled: fm.enabled !== false && String(fm.enabled).toLowerCase() !== "false" });
+    }
+    if (!list.length) for (const key of DEFAULT_AREAS) list.push({ key, path: null, note: key[0].toUpperCase() + key.slice(1), color: null, enabled: true });
+    // in the order of their tabs, then the rest by name
+    const at = (a) => { const i = this.layout.tabs.findIndex((t) => t.area === a.key); return i < 0 ? 999 : i; };
+    list.sort((a, b) => at(a) - at(b) || a.note.localeCompare(b.note));
+    const theme = this.layout.theme || normalizeTheme(null);
+    for (const a of list) a.color ??= theme.areas[a.key] || DEFAULT_AREA_COLORS[a.key] || THEME_PRESETS.mono;
+    this.areaList = list;
+    AREAS = list.filter((a) => a.enabled).map((a) => a.key);
+    AREA_COLORS = Object.fromEntries(list.map((a) => [a.key, a.color]));
+    AREA_TAG_RE = new RegExp(`(^|\\s)#(${AREAS.join("|") || "(?!)"})(?=\\s|$)`, "i");
+    const sig = JSON.stringify(list);
+    const changed = sig !== this.areaSig;
+    this.areaSig = sig;
+    return changed;
+  }
+
+  // for the views (planner, project steps, capture, purchases, projects board)
+  areaKeys() { return [...AREAS]; }
+  areaColors() { return { ...AREA_COLORS }; }
+  area(key) { return this.areaList?.find((a) => a.key === key) || null; }
+  areaName(key) {
+    return this.layout.tabs.find((t) => t.area === key)?.label || this.area(key)?.note || (key ? key[0].toUpperCase() + key.slice(1) : "");
+  }
+  areaColor(key) { return AREA_COLORS[key] || DEFAULT_AREA_COLORS[key] || THEME_PRESETS.mono; }
+
+  // the area's note, made when the vault has none for it yet (the three standard areas before their notes exist)
+  async areaFile(key) {
+    const a = this.area(key);
+    const f = a?.path && this.app.vault.getAbstractFileByPath(a.path);
+    if (f instanceof TFile) return f;
+    return this.writeAreaNote(a?.note || this.areaName(key), key, AREA_COLORS[key], true);
+  }
+
+  async writeAreaNote(name, key, color, enabled) {
+    const folder = `${AREA_ROOT}/${name}`;
+    for (const dir of [AREA_ROOT, folder]) if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
+    const text = `---\ntype: area\narea: ${key}\ncolor: "${color}"\nenabled: ${enabled}\n---\nThe ${name} area: notes in this folder with \`area: ${key}\` belong here, and so does every task in them and every task tagged \`#${key}\`. The ${name} tab shows everything in the area. Colour, name and the on/off switch: Configure > Areas in EX3C AgendA, or the properties above.\n\n## Tasks\n`;
+    return this.app.vault.create(`${folder}/${name}.md`, text);
+  }
+
+  async setAreaFields(key, patch) {
+    const file = await this.areaFile(key);
+    await this.app.fileManager.processFrontMatter(file, (fm) => Object.assign(fm, patch));
+    // show it now; the metadata event confirms it a moment later
+    const a = this.area(key);
+    if (a) { if ("color" in patch) a.color = patch.color; if ("enabled" in patch) a.enabled = patch.enabled; }
+    AREAS = (this.areaList || []).filter((x) => x.enabled).map((x) => x.key);
+    AREA_COLORS = Object.fromEntries((this.areaList || []).map((x) => [x.key, x.color]));
+    AREA_TAG_RE = new RegExp(`(^|\\s)#(${AREAS.join("|") || "(?!)"})(?=\\s|$)`, "i");
+    this.refreshViews();
+    this.applyAccent();
+  }
+
+  setAreaColor(key, color) { return HEX.test(color) ? this.setAreaFields(key, { color }) : Promise.resolve(); }
+  setAreaEnabled(key, enabled) { return this.setAreaFields(key, { enabled }); }
+
+  // A new area: its folder and note in 10 Areas, and a tab after the other area tabs.
+  async createArea(name, color, icon) {
+    name = String(name || "").replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
+    const key = areaSlug(name);
+    if (!key) { new Notice("Give the area a name."); return null; }
+    if (this.areaList?.some((a) => a.key === key)) { new Notice(`There is already an area #${key}.`); return null; }
+    if (this.app.vault.getAbstractFileByPath(`${AREA_ROOT}/${name}`)) { new Notice(`${AREA_ROOT}/${name} already exists: pick another name, or give the note in it type: area.`); return null; }
+    await this.writeAreaNote(name, key, color, true);
+    let id = key, n = 2;
+    while (this.layout.tabs.some((t) => t.id === id)) id = `${key}-${n++}`;
+    await this.changeLayout((layout) => {
+      let at = -1;
+      layout.tabs.forEach((t, i) => { if (t.area) at = i; });
+      layout.tabs.splice(at < 0 ? layout.tabs.length : at + 1, 0, { id, label: name, area: key, icon: icon || "layout-grid", widgets: [...AREA_WIDGETS] });
+    });
+    // read the new note straight away (the metadata cache follows)
+    this.areaList = [...(this.areaList || []), { key, path: `${AREA_ROOT}/${name}/${name}.md`, note: name, color, enabled: true }];
+    this.loadAreasFromList();
+    const tagged = this.app.metadataCache.getTags?.()[`#${key}`] || 0;
+    new Notice(`Area ${name} made: ${AREA_ROOT}/${name}/${name}.md and a ${name} tab.${tagged ? ` ${tagged} place${tagged === 1 ? "" : "s"} already tagged #${key} now belong to it.` : ""}`, 8000);
+    return id;
+  }
+
+  loadAreasFromList() {
+    AREAS = this.areaList.filter((a) => a.enabled).map((a) => a.key);
+    AREA_COLORS = Object.fromEntries(this.areaList.map((a) => [a.key, a.color]));
+    AREA_TAG_RE = new RegExp(`(^|\\s)#(${AREAS.join("|") || "(?!)"})(?=\\s|$)`, "i");
+    this.areaSig = JSON.stringify(this.areaList);
+    this.refreshViews();
+  }
+
+  // What renaming an area's key would change: task and text lines tagged #old (outside templates, settings and
+  // docs), and notes whose area property is old. Read only.
+  async areaKeyUses(oldKey) {
+    const re = new RegExp(`(^|\\s)#${oldKey}(?=[\\s/]|$)`, "i");
+    const lines = [], props = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (TASK_EXCLUDED.some((p) => file.path.startsWith(p))) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      // generated notes (the Work schedule note) are rewritten by the app itself after a rename
+      if ([].concat(cache?.frontmatter?.tags ?? []).map(String).includes("generated")) continue;
+      if (String(cache?.frontmatter?.area ?? "").toLowerCase() === oldKey) props.push(file.path);
+      if (!cache?.tags?.some((t) => t.tag.toLowerCase() === `#${oldKey}` || t.tag.toLowerCase().startsWith(`#${oldKey}/`))) continue;
+      const text = await this.app.vault.cachedRead(file);
+      const body = cache.frontmatterPosition ? cache.frontmatterPosition.end.line + 1 : 0;
+      text.split("\n").forEach((l, i) => { if (i >= body && re.test(l)) lines.push({ path: file.path, line: i, before: l }); });
+    }
+    return { lines, props };
+  }
+
+  // Rename an area: the name of its tab(s); for areas other than Work and Study also its folder and note (links follow),
+  // and with changeKey its key: #old becomes #new on every line, area: old becomes area: new. One undo for all of it.
+  async renameArea(key, newName, changeKey) {
+    const a = this.area(key);
+    newName = String(newName || "").replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
+    if (!a || !newName) return;
+    const locked = LOCKED_AREAS.includes(key);
+    const newKey = changeKey && !locked ? areaSlug(newName) : key;
+    if (newKey !== key && this.areaList.some((x) => x.key === newKey)) { new Notice(`There is already an area #${newKey}.`); return; }
+    const undo = { name: this.areaName(key), newName, key, newKey, labels: [], renames: [], lines: [], props: [] };
+    // names on the tabs
+    for (const t of this.layout.tabs) if (t.area === key) undo.labels.push({ id: t.id, label: t.label });
+    // folder and note
+    let file = await this.areaFile(key);
+    if (!locked) {
+      const folder = file.parent;
+      if (folder && folder.name === file.basename && folder.parent?.path === AREA_ROOT && folder.name !== newName && !this.app.vault.getAbstractFileByPath(`${AREA_ROOT}/${newName}`)) {
+        const from = folder.path;
+        await this.app.fileManager.renameFile(folder, `${AREA_ROOT}/${newName}`);
+        undo.renames.push({ from, to: `${AREA_ROOT}/${newName}` });
+        file = this.app.vault.getAbstractFileByPath(`${AREA_ROOT}/${newName}/${file.name}`) || file;
+      }
+      if (file.basename !== newName && !this.app.vault.getAbstractFileByPath(`${file.parent.path}/${newName}.md`)) {
+        const from = file.path, to = `${file.parent.path}/${newName}.md`;
+        await this.app.fileManager.renameFile(file, to);
+        undo.renames.push({ from, to });
+        file = this.app.vault.getAbstractFileByPath(to) || file;
+      }
+    }
+    if (newKey !== key) {
+      const uses = await this.areaKeyUses(key);
+      const re = new RegExp(`(^|\\s)#${key}(?=[\\s/]|$)`, "gi");
+      const byFile = new Map();
+      for (const u of uses.lines) byFile.set(u.path, [...(byFile.get(u.path) || []), u]);
+      for (const [path, us] of byFile) {
+        const f = this.app.vault.getAbstractFileByPath(path);
+        if (!(f instanceof TFile)) continue;
+        await this.app.vault.process(f, (data) => {
+          const L = data.split("\n");
+          for (const u of us) if (L[u.line] === u.before) { L[u.line] = u.before.replace(re, `$1#${newKey}`); undo.lines.push({ path, line: u.line, before: u.before, after: L[u.line] }); }
+          return L.join("\n");
+        });
+      }
+      for (const path of new Set([...uses.props, file.path])) {
+        const f = this.app.vault.getAbstractFileByPath(path);
+        if (!(f instanceof TFile)) continue;
+        await this.app.fileManager.processFrontMatter(f, (fm) => {
+          if (String(fm.area ?? "").toLowerCase() === key) { fm.area = newKey; undo.props.push(path); }
+        });
+      }
+    }
+    await this.changeLayout((layout) => { for (const t of layout.tabs) if (t.area === key) { t.label = newName; t.area = newKey; } });
+    this.areaUndo = undo;
+    try { window.localStorage.setItem("ex3c-area-undo", JSON.stringify(undo)); } catch (e) { /* ignore */ }
+    const ar = this.area(key);
+    if (ar) { ar.key = newKey; ar.note = locked ? ar.note : newName; ar.path = file.path; }
+    this.loadAreasFromList();
+    const what = [`${undo.name} is now ${newName}`];
+    if (undo.renames.length) what.push(`note and folder renamed`);
+    if (newKey !== key) what.push(`#${key} became #${newKey} on ${undo.lines.length} line${undo.lines.length === 1 ? "" : "s"}, area: ${newKey} in ${undo.props.length} note${undo.props.length === 1 ? "" : "s"}`);
+    const frag = document.createDocumentFragment();
+    frag.append(`${what.join("; ")}. `);
+    const btn = document.createElement("button");
+    btn.textContent = "Undo";
+    btn.addEventListener("click", () => void this.undoAreaRename());
+    frag.append(btn);
+    new Notice(frag, 12000);
+  }
+
+  async undoAreaRename() {
+    if (this.areaUndo === undefined) { try { this.areaUndo = JSON.parse(window.localStorage.getItem("ex3c-area-undo") || "null"); } catch (e) { this.areaUndo = null; } }
+    const u = this.areaUndo;
+    if (!u) return;
+    this.areaUndo = null;
+    try { window.localStorage.removeItem("ex3c-area-undo"); } catch (e) { /* ignore */ }
+    let skipped = 0;
+    const byFile = new Map();
+    for (const l of u.lines) byFile.set(l.path, [...(byFile.get(l.path) || []), l]);
+    for (const [path, ls] of byFile) {
+      const f = this.app.vault.getAbstractFileByPath(path);
+      if (!(f instanceof TFile)) { skipped += ls.length; continue; }
+      await this.app.vault.process(f, (data) => {
+        const L = data.split("\n");
+        for (const l of ls) { if (L[l.line] === l.after) L[l.line] = l.before; else skipped++; }
+        return L.join("\n");
+      });
+    }
+    for (const path of u.props) {
+      const f = this.app.vault.getAbstractFileByPath(path);
+      if (f instanceof TFile) await this.app.fileManager.processFrontMatter(f, (fm) => { if (fm.area === u.newKey) fm.area = u.key; });
+    }
+    for (const r of [...u.renames].reverse()) {
+      const f = this.app.vault.getAbstractFileByPath(r.to);
+      if (f && !this.app.vault.getAbstractFileByPath(r.from)) await this.app.fileManager.renameFile(f, r.from);
+      else skipped++;
+    }
+    await this.changeLayout((layout) => {
+      for (const t of layout.tabs) {
+        const was = u.labels.find((x) => x.id === t.id);
+        if (was) { t.label = was.label; t.area = u.key; }
+      }
+    });
+    this.areaSig = null;
+    this.loadAreas();
+    this.refreshViews();
+    new Notice(`Rename undone: ${u.newName} is ${u.name} again.${skipped ? ` ${skipped} change${skipped === 1 ? " was" : "s were"} edited since and left as they are.` : ""}`, 8000);
+  }
+
+
+  tabShown(tab) { return (tab.id !== "ai" || this.aiOn()) && !(tab.area && this.areaList?.some((a) => a.key === tab.area && !a.enabled)); }
 
   // Optional modules widget: what a removed module took away, so Restore can put it back.
   setModuleRecord(id, record) {
