@@ -555,6 +555,24 @@ const shift = (r, n) => act(r, line => shiftLine(line, n), line => shiftLine(lin
 const toggle = r => act(r, "toggle", line => line.replace(/\[(.)\]/, (m, c) => (c === " " ? "[x]" : "[ ]")));
 const edit = r => act(r, "edit");
 const openAt = r => { try { app.workspace.openLinkText(r.path, "", false, { eState: { line: r.line } }); } catch (e) { console.warn(e); } };
+// A task's menu: right-click it, or on a phone press and hold it and let go without moving (moving drags it).
+// Edit task is the Tasks plugin's dialog, where EX3C AgendA adds the fields (length, price, shop and the rest).
+const EX3C = app.plugins.plugins["ex3c-agenda"];
+function taskMenu(ev, r) {
+  ev?.preventDefault?.();
+  if (!EX3C?.showMenu) { edit(r); return; }
+  const m = meta(r.raw), items = [];
+  if (!m.event) items.push({ title: "Edit task…", icon: "pencil", run: () => edit(r) });
+  if (!m.done && !m.event && !m.recur) {
+    if (m.sched !== TODAY) items.push({ title: "Do today", icon: "calendar-check", run: () => schedule(r, TODAY) });
+    if (m.sched !== TOMORROW) items.push({ title: "Do tomorrow", icon: "calendar-plus", run: () => schedule(r, TOMORROW) });
+    if (m.start !== null) items.push({ title: "Remove the time", icon: "clock", run: () => unTime(r) });
+    if (m.sched) items.push({ title: "Take off the plan", icon: "calendar-x", run: () => schedule(r, null) });
+  }
+  if (!m.event) items.push({ title: m.done ? "Mark as not done" : "Mark as done", icon: "check-square", run: () => toggle(r) });
+  EX3C.showMenu(ev, [...items, "-", { title: "Open in its note", icon: "file-text", run: () => openAt(r) }]);
+}
+const menuOn = (el, r) => el.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); if (!drag) taskMenu(ev, r); }); // during a drag the press is the drag's
 
 function chips(parent, r, m, { showSched = false } = {}) {
   if (m.start !== null) h("span", { class: "pln-chip is-time", title: "Time block (set in Day Planner or by Put on the timeline)" }, parent, `${clock(m.start)} - ${clock(m.end)}`);
@@ -812,8 +830,9 @@ function render() {
     h("option", { value: "" }, sel, "Day…");
     for (const d of days.slice(2)) h("option", { value: d }, sel, dayLabel(d));
     sel.addEventListener("change", () => { if (sel.value) schedule(r, sel.value); });
-    const pe = h("span", { class: "pln-acts", style: "margin-left:4px", title: "Edit in the Tasks dialog" }, c3);
+    const pe = h("span", { class: "pln-acts", style: "margin-left:4px", title: "Edit task: dates, priority, length, price… (or right-click the task)" }, c3);
     h("span", {}, pe, "✎").addEventListener("click", () => edit(r));
+    menuOn(tr, r);
   }
 
   // later steps: open steps that are not next yet, with what they wait for, so nothing in a project is invisible
@@ -825,7 +844,7 @@ function render() {
     h("summary", { class: "pln-sub", style: "cursor:pointer" }, det, `Later steps (${later.length}): waiting for an earlier step or a ⛔`);
     const lt = h("table", { class: "pln-table" }, det);
     for (const r of suggestedOrder(later)) {
-      const m = meta(r.raw), tr = h("tr", {}, lt);
+      const m = meta(r.raw), tr = h("tr", {}, lt); menuOn(tr, r);
       const c1 = h("td", {}, tr);
       const tx = h("span", { style: "cursor:pointer;color:var(--text-muted)" }, c1, label(r.raw));
       tx.addEventListener("click", () => openAt(r));
@@ -865,7 +884,7 @@ function draggable(el, r, kind, extra = {}) {
   el.addEventListener("pointerdown", ev => {
     if (ev.button > 0 || ev.target.closest("input, .pln-x") || (kind !== "resize" && ev.target.closest(".pln-rs"))) return;
     if (kind === "resize") ev.stopPropagation();
-    const d = { r, kind, x: ev.clientX, y: ev.clientY, active: false, el, ...extra, touch: ev.pointerType === "touch" };
+    const d = { r, kind, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, active: false, el, ...extra, touch: ev.pointerType === "touch" };
     if (kind === "block") d.offset = Math.round((ev.clientY - el.getBoundingClientRect().top) / PXM / SNAP) * SNAP; // grab point inside the block
     drag = d;
     const begin = () => {
@@ -881,7 +900,21 @@ function draggable(el, r, kind, extra = {}) {
       if (!d.active) { if (d.touch) { if (far > 8) cancel(); return; } if (far < 5) return; begin(); }
       d.x = e.clientX; d.y = e.clientY; moveTo(d.x, d.y);
     };
-    const up = e => { cleanup(); if (d.active) { d.justDragged = true; setTimeout(() => (d.justDragged = false), 0); void drop(d, e.clientX, e.clientY); } };
+    const up = e => {
+      cleanup();
+      if (!d.active) return;
+      d.justDragged = true; setTimeout(() => (d.justDragged = false), 0);
+      // on a phone, holding a task and letting go where it was opens its menu (after the click that follows the
+      // touch, which would close it again); holding and moving drags it
+      if (d.touch && kind !== "resize" && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 10) {
+        const open = () => { clearTimeout(t); document.removeEventListener("click", swallow, true); taskMenu(e, r); };
+        const swallow = ev => { ev.stopPropagation(); ev.preventDefault(); open(); };
+        const t = setTimeout(open, 400);
+        document.addEventListener("click", swallow, true);
+        return;
+      }
+      void drop(d, e.clientX, e.clientY);
+    };
     const cancel = () => { cleanup(); };
     const cleanup = () => { clearTimeout(d.timer); clearInterval(d.scroller); document.removeEventListener("touchmove", stopScroll, { capture: true }); document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", cancel); d.ghost?.remove(); clearHints(); if (drag === d) drag = null; if (d.active) { suppressClick = true; setTimeout(() => (suppressClick = false), 50); } };
     document.addEventListener("pointermove", move);
@@ -1098,7 +1131,7 @@ function selPanel(box, where) {
   if (st.inside.length) {
     const ul = h("div", { class: "pln-sellist" }, p);
     for (const b of st.inside.sort((x, y) => (x.day < y.day ? -1 : x.day > y.day ? 1 : x.s - y.s))) {
-      const m = meta(b.r.raw), row = h("div", { class: `pln-selrow${m.done ? " is-done" : ""}` }, ul);
+      const m = meta(b.r.raw), row = h("div", { class: `pln-selrow${m.done ? " is-done" : ""}` }, ul); menuOn(row, b.r);
       const cb = h("input", { type: "checkbox", title: "Tick the tasks to add a commute to (or remove it from)" }, row);
       cb.checked = ticked[b.r.key] ?? !m.event; cb.addEventListener("change", () => { ticked[b.r.key] = cb.checked; redraw(); });
       h("span", { class: "pln-bt" }, row, `${st.days.length > 1 ? `${asDate(b.day).toLocaleDateString(undefined, { weekday: "short" })} ` : ""}${clock(b.s)} - ${clock(b.e)}`);
@@ -1188,6 +1221,7 @@ function poolItem(parent, r, { day = null } = {}) {
   if (m.due) { const dd = daysUntil(m.due); h("span", { class: `pln-chip${dd < 0 ? " is-due" : dd <= 2 ? " is-soon" : ""}` }, cs, dd < 0 ? "overdue" : dd === 0 ? "due today" : `due ${dd}d`); }
   it.addEventListener("click", () => { if (suppressClick) return; picked = picked === r.key ? null : r.key; render(); });
   draggable(it, r, "pool");
+  menuOn(it, r);
   return it;
 }
 // The hours shown: your day's start to its end, widened to fit every block.
@@ -1252,6 +1286,7 @@ function hourGrid(parent, day, g0, g1, timed, { labels = true } = {}) {
     const rs = h("div", { class: "pln-rs" }, el);
     draggable(rs, b.r, "resize");
     draggable(el, b.r, "block");
+    menuOn(el, b.r);
   }
   drawSelOn(grid);
   return blocks;
@@ -1395,8 +1430,10 @@ function item(parent, r, { day, showSched } = {}) {
   const tx = h("div", {}, body, label(r.raw));
   tx.addEventListener("click", () => openAt(r));
   const cs = h("div", {}, body); chips(cs, r, m, { showSched });
+  menuOn(row, r);
   if (m.done) return;
   const acts = h("span", { class: "pln-acts" }, row);
+  if (!m.event) h("span", { title: "Edit task: dates, priority, length, price… (or right-click the task)" }, acts, "✎").addEventListener("click", () => edit(r));
   if (m.recur) return; // the Tasks plugin owns a repeating task's dates
   if (!m.spread && m.sched && spanDays(m.est) > 1) h("span", { title: `Longer than your ${state.capacity} hours a day: spread it over ${spanDays(m.est)} days from ${dayLabel(m.sched)}` }, acts, "⇉").addEventListener("click", () => schedule(r, m.sched));
   h("span", { title: m.spread ? "All its days one day earlier" : "Day earlier" }, acts, "‹").addEventListener("click", () => shift(r, -1));

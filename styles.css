@@ -1823,3 +1823,14 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .life-os-area-list ul { max-height: 30vh; overflow: auto; font-size: 12px; font-family: var(--font-monospace); }
 .life-os-area-list.is-hidden { display: none; }
 @media (hover: none) { .life-os-area-actions button { min-height: 34px; } .life-os-area-swatch { width: 34px; height: 34px; min-width: 34px; } }
+
+/* Fields section in the Tasks plugin's edit dialog (addTaskFields in main.js) */
+.ex3c-task-fields { margin-top: 6px; }
+.ex3c-tf-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.ex3c-tf-note { font-size: var(--font-ui-smaller); color: var(--text-faint); }
+.ex3c-tf-grid { display: grid; grid-template-columns: 6em minmax(0, 1fr) 6em minmax(0, 1fr); column-gap: .5em; row-gap: 5px; align-items: center; }
+.ex3c-tf-field { display: contents; }
+.ex3c-tf-grid input, .ex3c-tf-grid select { width: 100%; min-width: 0; }
+.ex3c-tf-add { display: flex; gap: 6px; margin-top: 6px; }
+.ex3c-tf-add input { flex: 1 1 8em; min-width: 0; }
+@media (max-width: 499px) { .ex3c-tf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 6px; } .ex3c-tf-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .ex3c-tf-add { flex-wrap: wrap; } }

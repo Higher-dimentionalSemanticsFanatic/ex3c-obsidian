@@ -33,6 +33,13 @@ const match = (list, word) => { const w = slug(word); return list.find(n => n.sl
 // Returns the parts it understood and the task line it would write. Words in "quotes" are always kept as text.
 function parse(input) {
   const out = { text: [], tags: [], fields: [], warnings: [] };
+  // the syntax the task line uses is understood too: ⏳ 2026-10-30, 📅, 🛫, ⏫ 🔺 🔽, 🔁 every week, 10:00 - 11:00
+  const PRI_EMOJI = { "🔺": "!!", "⏫": "!", "🔼": "!med", "🔽": "!low", "⏬": "!lowest" }, DATE_EMOJI = { "⏳": "do", "📅": "due", "🛫": "start" };
+  input = input
+    .replace(/(^|\s)(\d{1,2}:\d{2})\s+-\s+(\d{1,2}:\d{2})(?=\s|$)/g, "$1$2-$3")
+    .replace(/(⏳|📅|🛫)\uFE0F?\s*(\d{4})-(\d{2})-(\d{2})/gu, (all, e, y, m, d) => ` ${DATE_EMOJI[e]} ${d}-${m}-${y} `)
+    .replace(/🔁\uFE0F?\s*/gu, " ")
+    .replace(/[🔺⏫🔼🔽⏬]\uFE0F?/gu, e => ` ${PRI_EMOJI[e.replace(/\uFE0F/, "")]} `);
   // fields typed the Dataview way: "price:: 12", "shop:: ikea", "[est:: 1h]"; price, qty and est are read as below
   input = input.replace(/\[([\w-]+)::\s*([^\]]*)\]|(?<![\w"])([\w-]+)::\s*("[^"]*"|\S+)/g, (all, k1, v1, k2, v2) => {
     const k = (k1 || k2).toLowerCase(), v = (v1 ?? v2).replace(/^"|"$/g, "").trim();
@@ -156,6 +163,9 @@ function parse(input) {
     // a date on its own: today, fri, next mon, in 3 days, 24-10 (writes ⏳)
     const d = dateAt(i, false);
     if (d) { out.date = d[0]; i += d[1] - 1; continue; }
+    // the tags the task line uses for a project and a person route the task the same way as @ and +
+    if (/^#project\/[\w-]+$/.test(raw)) { const p = match(PROJECTS, raw.slice(9)); out.project = p || { name: raw.slice(9), slug: slug(raw.slice(9)), path: null }; if (!p) out.warnings.push(`No project note matches "${raw.slice(9)}": the task gets the tag and goes to the inbox.`); continue; }
+    if (/^#p\/[\w-]+$/.test(raw)) { const p = match(PEOPLE, raw.slice(3)); out.person = p || { name: raw.slice(3), slug: slug(raw.slice(3)) }; continue; }
     if (/^#[\w/-]+$/.test(raw)) { out.tags.push(raw); continue; }
     out.text.push(raw);
   }
@@ -243,8 +253,11 @@ h("style", {}, root, `
 .qc-props { border-collapse: collapse; width: 100%; margin: 6px 0; }
 .qc-props th, .qc-props td { text-align: left; vertical-align: top; padding: 3px 6px; border-bottom: 1px solid var(--background-modifier-border); }
 .qc-props code { white-space: nowrap; line-height: 2; margin: 0 4px 0 0; padding: 1px 5px; border-radius: 4px; background: var(--code-background, var(--background-secondary)); }
-.qc-props td:first-child { width: 8em; } .qc-props td:last-child { width: 28%; }
-@media (max-width: 560px) { .qc-props thead { display: none; } .qc-props tr { display: block; padding: 4px 0; border-bottom: 1px solid var(--background-modifier-border); } .qc-props td, .qc-props td:first-child, .qc-props td:last-child { display: block; width: auto; border: 0; padding: 1px 0; } .qc-props td:last-child { color: var(--text-faint); } }
+.qc-props td:first-child { width: 8em; } .qc-props td:last-child { width: 30%; }
+.qc-ins { cursor: pointer; } .qc-ins:hover, .qc-ins:focus-visible { color: var(--text-accent); outline: 1px solid var(--interactive-accent); }
+.qc-note { color: var(--text-faint); }
+.qc-props { table-layout: fixed; } .qc-props td { overflow-wrap: anywhere; } .qc-props code.qc-ins { display: inline-block; white-space: normal; } .qc-props td:last-child .qc-note { display: block; font-size: 11px; }
+@media (max-width: 560px) { .qc-props, .qc-props tbody { display: block; table-layout: auto; } .qc-props colgroup, .qc-props thead { display: none; } .qc-props tr { display: block; padding: 4px 0; border-bottom: 1px solid var(--background-modifier-border); } .qc-props td, .qc-props td:first-child, .qc-props td:last-child { display: block; width: auto; border: 0; padding: 1px 0; } .qc-props td:last-child::before { content: "writes "; color: var(--text-faint); } }
 .qc-added { font-size: 12px; margin: 2px 0; cursor: pointer; }
 .qc-added:hover { color: var(--text-accent); }
 `);
@@ -256,25 +269,61 @@ const add = h("button", { class: "mod-cta" }, bar, "Add");
 h("span", { class: "qc-help" }, bar, "Enter adds · Shift+Enter for another task on a new line");
 const help = h("details", { class: "qc-help" }, root);
 h("summary", {}, help, "Available properties");
-// one row per property: what it is, what you can type (no special keys needed), what lands in the task line
+h("p", { style: "margin:4px 0" }, help, "Type the words, or click any example to put it in the box. Both ways end up as the syntax on the right.");
+// one row per property: what it is, what you can type (no special keys needed), the syntax it writes in the task line.
+// An example is [shown text, text to insert]; a string inserts itself.
+const TOMORROW_ISO = iso(addDays(today(), 1));
 const ROWS = [
-  ["Do on (plan)", "<code>today</code> <code>tomorrow</code> <code>fri</code> <code>next mon</code> <code>in 3 days</code> <code>24-10</code> <code>do 1-11</code>", "⏳ scheduled"],
-  ["Deadline", "<code>due fri</code> <code>by 24-10</code> <code>deadline 1-11-2026</code>", "📅 due"],
-  ["Start", "<code>start mon</code> <code>from 24-10</code> (hidden until then)", "🛫 start"],
-  ["Time", "<code>14:00</code> <code>2pm</code> <code>9:30-11</code> <code>2-4pm</code> <code>at 14</code> <code>from 9 to 11</code>", "a block on the timeline (today if no day)"],
-  ["Length", "<code>30m</code> <code>1h30</code> <code>2 h</code> <code>45 min</code> <code>for 1 hour</code>", "[est:: ]"],
-  ["Priority", "<code>!</code> high, <code>!!</code> urgent, <code>!low</code>, or <code>prio high</code> <code>prio low</code>", "⏫ 🔺 🔽"],
-  ["Price", "<code>12 eur</code> <code>price 12</code> <code>12.50</code> <code>12,50</code> <code>€12</code>", "[price:: ]"],
-  ["Quantity", "<code>x3</code> <code>qty 3</code> <code>3 pcs</code>", "[qty:: ]"],
-  ["Project", "<code>@cpmx</code> or <code>project cpmx</code>", "#project/… and goes into that note"],
-  ["Person", "<code>+alex</code> or <code>with alex</code> (keeps the words)", "#p/…"],
-  ["Area", `${AREA_KEYS.map(k => `<code>#${k}</code>`).join(" ")} or <code>area ${AREA_KEYS[0] || "work"}</code>`, "the area tag"],
-  ["Repeat", "<code>every week</code> <code>every 2 days</code> <code>every monday</code> <code>every weekday</code>", "🔁"],
-  ["Any field", "<code>shop:: ikea</code> <code>link:: \"some text\"</code>", "[shop:: ikea]"],
+  ["Do on (plan)", ["today", "tomorrow", "fri", "next mon", "in 3 days", "24-10", "do 1-11"], "", [`⏳ ${TOMORROW_ISO}`], "scheduled"],
+  ["Deadline", ["due fri", "by 24-10", "deadline 1-11-2026"], "", [`📅 ${TOMORROW_ISO}`], "due"],
+  ["Start", ["start mon", "from 24-10"], "hidden until then", [`🛫 ${TOMORROW_ISO}`], "start"],
+  ["Time", ["14:00", "2pm", "9:30-11", "2-4pm", "at 14", "from 9 to 11"], "", ["10:00 - 11:00"], "at the start; today if no day"],
+  ["Length", ["30m", "1h30", "2 h", "45 min", "for 1 hour"], "", ["[est:: 30m]"], ""],
+  ["Priority", [["!", "!"], ["!!", "!!"], "!low", "prio high", "prio low"], "! high, !! urgent", ["🔺", "⏫", "🔼", "🔽", "⏬"], "urgent to lowest"],
+  ["Price", ["12 eur", "price 12", "12.50", "12,50", "€12"], "price of one", [["[price:: 12]", "[price:: ]"]], ""],
+  ["Quantity", ["x3", "qty 3", "3 pcs"], "", [["[qty:: 3]", "[qty:: ]"]], ""],
+  ["Project", [["@name", "@"], ["project name", "project "]], "a project note's name", [["#project/name", "#project/"]], "and goes into that note"],
+  ["Person", [["+name", "+"], ["with name", "with "]], "keeps the words", [["#p/name", "#p/"]], ""],
+  ["Area", [...AREA_KEYS.map(k => `#${k}`), `area ${AREA_KEYS[0] || "work"}`], "", AREA_KEYS.map(k => `#${k}`), ""],
+  ["Repeat", ["every week", "every 2 days", "every monday", "every weekday"], "", ["🔁 every week"], ""],
+  ["Your own field", [["shop:: ikea", "shop:: "], ["link:: https://…", "link:: https://"]], "any name you make up, then :: and the value", [["[shop:: ikea]", "[shop:: ]"], ["[link:: https://…]", "[link:: https://]"]], "the purchases list shows and sorts by them"],
 ];
-help.insertAdjacentHTML("beforeend", `<table class="qc-props"><thead><tr><th>Property</th><th>Type</th><th>Writes</th></tr></thead><tbody>${
-  ROWS.map(([a, b, c]) => `<tr><td><b>${a}</b></td><td>${b}</td><td>${c}</td></tr>`).join("")}</tbody></table>
-<p>Words in "quotes" always stay text, for example <code>"Friday meeting notes"</code>. On their own, <code>1-3</code> and <code>sun</code> stay text; write <code>do 1-3</code> or <code>on sun</code> for a date.</p>`);
+// put text into the box at the cursor; the cursor lands where the value goes (in [price:: ] before the ], on a date: the date selected)
+function insert(text) {
+  const s0 = ta.selectionStart ?? ta.value.length, e0 = ta.selectionEnd ?? s0;
+  const before = ta.value.slice(0, s0), after = ta.value.slice(e0);
+  const open = /::/.test(text) && text.endsWith("]");
+  const glue = /[@+/]$|:: (https:\/\/)?$|\s$/.test(text); // the value is typed right after it
+  const pre = before && !/\s$/.test(before) ? " " : "", post = glue || /^\s/.test(after) ? "" : " ";
+  ta.value = before + pre + text + post + after;
+  const at = before.length + pre.length, d = text.match(/\d{4}-\d{2}-\d{2}/);
+  let cs, ce;
+  if (open) cs = ce = at + text.length - 1; // inside [name:: ]
+  else if (d) { cs = at + d.index; ce = cs + 10; }
+  else cs = ce = at + text.length + post.length;
+  ta.focus(); ta.setSelectionRange(cs, ce); grow(); showPreview();
+}
+const codes = (parent, list) => {
+  for (const ex of list) {
+    const [shown, ins] = Array.isArray(ex) ? ex : [ex, ex];
+    const c = h("code", { class: "qc-ins", role: "button", tabindex: "0", title: `Click to add ${ins.trim() || shown}` }, parent, shown);
+    c.addEventListener("mousedown", e => e.preventDefault()); // keep the cursor where it is in the box
+    c.addEventListener("click", () => insert(ins));
+    c.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); insert(ins); } });
+  }
+};
+const tbl = h("table", { class: "qc-props" }, help);
+const cg = h("colgroup", {}, tbl); h("col", { style: "width:7.5em" }, cg); h("col", {}, cg); h("col", { style: "width:34%" }, cg);
+const hr = h("tr", {}, h("thead", {}, tbl));
+for (const t of ["Property", "Type", "Writes (syntax)"]) h("th", {}, hr, t);
+const tb = h("tbody", {}, tbl);
+for (const [name, typed, typedNote, syntax, syntaxNote] of ROWS) {
+  const tr = h("tr", {}, tb);
+  h("b", {}, h("td", {}, tr), name);
+  const t1 = h("td", {}, tr); codes(t1, typed); if (typedNote) h("span", { class: "qc-note" }, t1, ` ${typedNote}`);
+  const t2 = h("td", {}, tr); codes(t2, syntax); if (syntaxNote) h("span", { class: "qc-note" }, t2, ` ${syntaxNote}`);
+}
+help.insertAdjacentHTML("beforeend", `<p>Words in "quotes" always stay text, for example <code>"Friday meeting notes"</code>. On their own, <code>1-3</code> and <code>sun</code> stay text; write <code>do 1-3</code> or <code>on sun</code> for a date. To change a task later, right-click it in the planner (on a phone: press and hold it, then let go) and pick <b>Edit task</b>, or put the cursor on it in a note and run <b>Tasks: Create or edit task</b>. Its Fields section sets the length, price, shop, link and your own fields.</p>`);
 const addedBox = h("div", {}, root);
 
 const linesOf = () => ta.value.split("\n").map(s => s.trim()).filter(Boolean);
