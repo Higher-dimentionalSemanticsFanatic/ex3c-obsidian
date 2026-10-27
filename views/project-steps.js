@@ -207,6 +207,24 @@ const STORE = "compass-project-steps";
 const ui = (() => { try { return { selected: null, view: {}, zoom: "day", ...JSON.parse(localStorage.getItem(STORE) || "{}") }; } catch (e) { return { selected: null, view: {}, zoom: "day" }; } })();
 const saveUi = () => { try { localStorage.setItem(STORE, JSON.stringify(ui)); } catch (e) {} };
 const KEEP = (window.__compassSteps ??= { scroll: {} }); // horizontal scroll per chart, kept across Dataview reruns
+// The task title column: drag the line between titles and chart (on a phone, press and drag it) to make it wider or
+// narrower. The width is kept per device (phone and desktop each their own), every chart uses it.
+const LABEL_KEY = window.innerWidth <= 600 ? "labelWPhone" : "labelW";
+const labelWidth = () => Math.max(60, Math.min(700, Number(ui[LABEL_KEY]) || (window.innerWidth <= 600 ? 130 : 380)));
+function splitter(wrap, labels) {
+  const bar = wrap.createEl("div", { cls: "pg-split", attr: { title: "Drag to make the titles wider or narrower; double-click for the standard width" } });
+  bar.addEventListener("pointerdown", ev => {
+    if (ev.button > 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    try { bar.setPointerCapture(ev.pointerId); } catch (err) { /* not a real pointer */ }
+    const x0 = ev.clientX, w0 = labels.offsetWidth, z = ZM();
+    bar.classList.add("is-dragging");
+    const move = e => { const w = Math.max(60, Math.min(700, Math.round(w0 + (e.clientX - x0) / z))); for (const l of dv.container.querySelectorAll(".pg-labels")) l.style.width = `${w}px`; ui[LABEL_KEY] = w; };
+    const up = () => { bar.classList.remove("is-dragging"); document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", up); saveUi(); };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
+  });
+  bar.addEventListener("dblclick", () => { delete ui[LABEL_KEY]; saveUi(); for (const l of dv.container.querySelectorAll(".pg-labels")) l.style.width = `${labelWidth()}px`; });
+}
 
 function setDate(line, emoji, date) {
   const re = new RegExp(`\\s*${emoji} \\d{4}-\\d{2}-\\d{2}`, "u");
@@ -379,7 +397,7 @@ function charts(path, host) {
 function gantt(host, path, heading, rows, showHeading) {
   schedule(rows);
   const vis = visibleRows(rows, path);
-  const PX = ZOOM[ui.zoom] ?? ZOOM.day, ROW = 26, LABEL = 380;
+  const PX = ZOOM[ui.zoom] ?? ZOOM.day, ROW = 26, LABEL = labelWidth();
   const pdue = projectDue(path);
   const all = rows.flatMap(r => [r.s, r.e, r.due].filter(Boolean)).concat([TODAY], pdue ? [pdue] : []).sort();
   const first = addDays(all[0], -2), last = addDays(all[all.length - 1], 4);
@@ -389,6 +407,7 @@ function gantt(host, path, heading, rows, showHeading) {
   if (showHeading) box.createEl("div", { text: heading, cls: "pg-head" });
   const wrap = box.createEl("div", { cls: "pg-wrap" });
   const labels = wrap.createEl("div", { cls: "pg-labels", attr: { style: `width:${LABEL}px` } });
+  splitter(wrap, labels);
   const scroller = wrap.createEl("div", { cls: "pg-scroll" });
   const plot = scroller.createEl("div", { cls: "pg-plot", attr: { style: `width:${W}px;height:${36 + vis.length * ROW}px` } });
   // time axis: month names, then weekday and day, or week starts
@@ -474,12 +493,13 @@ function sequence(rows) {
 function seqGantt(host, path, heading, rows, showHeading) {
   const total = sequence(rows);
   const vis = visibleRows(rows, path);
-  const PXH = (SEQ_ZOOM[ui.zoom] ?? SEQ_ZOOM.day) / 60, ROW = 26, LABEL = 380; // px per minute
+  const PXH = (SEQ_ZOOM[ui.zoom] ?? SEQ_ZOOM.day) / 60, ROW = 26, LABEL = labelWidth(); // px per minute
   const W = Math.max(300, (total + 120) * PXH);
   const box = host.createEl("div", { cls: "pg-box", attr: { style: `--area:${areaColour(path)}` } });
   if (showHeading) box.createEl("div", { text: heading, cls: "pg-head" });
   const wrap = box.createEl("div", { cls: "pg-wrap" });
   const labels = wrap.createEl("div", { cls: "pg-labels", attr: { style: `width:${LABEL}px` } });
+  splitter(wrap, labels);
   const scroller = wrap.createEl("div", { cls: "pg-scroll" });
   const plot = scroller.createEl("div", { cls: "pg-plot", attr: { style: `width:${W}px;height:${36 + vis.length * ROW}px` } });
   labels.createEl("div", { cls: "pg-axis-pad" });
@@ -959,7 +979,6 @@ if (input?.allProjects && files.length) {
 .pg-head { font-weight: 600; font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
 .pg-wrap { display: flex; }
 .pg-labels { flex-shrink: 0; border-right: 1px solid var(--background-modifier-border); font-size: 12px; }
-@media (max-width: 600px) { .pg-labels { width: 130px !important; } }
 .pg-axis-pad { height: 36px; border-bottom: 1px solid var(--background-modifier-border); }
 .pg-label { display: flex; align-items: center; gap: 3px; white-space: nowrap; overflow: hidden; box-sizing: border-box; border-bottom: 1px solid var(--background-modifier-border-hover, transparent); }
 .pg-label input { margin: 0 2px 0 0; flex-shrink: 0; }
@@ -1009,6 +1028,10 @@ if (input?.allProjects && files.length) {
 .pg-move:hover { color: var(--text-accent); }
 .pg-label.is-dragging { background: var(--background-modifier-hover); }
 .pg-labels { position: relative; }
+.pg-split { flex: 0 0 10px; margin: 0 -5px; position: relative; z-index: 6; cursor: col-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
+.pg-split::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background .1s; }
+.pg-split:hover::after, .pg-split.is-dragging::after { background: var(--interactive-accent); }
+@media (hover: none) { .pg-split { flex-basis: 18px; margin: 0 -9px; } .pg-split::after { left: 8px; background: var(--background-modifier-border); } }
 .pg-drop { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--interactive-accent); z-index: 5; pointer-events: none; }
 .pg-with { position: absolute; font-size: 11px; color: var(--text-accent); z-index: 4; }
 .pg-blocked { color: var(--color-red); font-size: 11px; flex-shrink: 0; cursor: help; }
