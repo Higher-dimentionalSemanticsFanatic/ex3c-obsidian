@@ -148,7 +148,8 @@ function draw() {
     else add(e.i[state.group] || `No ${state.group}`, e);
   }
   const cols = ["", "Item", "Qty", "Unit", "Total", ...(state.group === "shop" ? [] : ["Shop"]), ...(state.group === "project" ? [] : ["Project"]), ...ex, ""];
-  const table = out.createEl("table");
+  // wide on a phone: the table scrolls sideways inside its card, the page does not
+  const table = out.createEl("div", { attr: { style: "overflow-x:auto;max-width:100%" } }).createEl("table");
   const hr = table.createEl("thead").createEl("tr");
   for (const c of cols) hr.createEl("th", { text: c });
   const body = table.createEl("tbody");

@@ -444,6 +444,7 @@
 
 .life-os-today-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .life-os-today-row {
@@ -462,6 +463,7 @@
 }
 
 .life-os-today-row > span:first-child {
+  min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
   text-overflow: ellipsis;
@@ -1583,7 +1585,12 @@
   .life-os-home .life-os-app-frame { display: block; }
   .life-os-home .life-os-rail { position: relative; height: auto; max-height: none; padding: 8px; }
   .life-os-home .life-os-rail-brand, .life-os-home .life-os-rail-foot { display: none; }
-  .life-os-home .life-os-nav { display: flex; overflow-x: auto; }
+  .life-os-home .life-os-nav { display: flex; overflow-x: auto; min-width: 0; position: relative; scrollbar-width: none; }
+  .life-os-home .life-os-nav::-webkit-scrollbar { display: none; }
+  /* more tabs past an edge: that edge fades out */
+  .life-os-home .life-os-nav.is-more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+  .life-os-home .life-os-nav.is-more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
+  .life-os-home .life-os-nav.is-more-left.is-more-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
   .life-os-home .life-os-nav-button { flex: 0 0 auto; width: auto; }
   .life-os-home .life-os-topbar { position: relative; top: 0; padding: 10px; }
   .life-os-home .life-os-shell { width: calc(100% - 24px); padding-top: 12px; }

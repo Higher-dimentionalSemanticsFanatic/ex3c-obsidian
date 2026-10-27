@@ -74,7 +74,7 @@ async function newIdea() {
 const root = dv.container.createEl("div", { cls: "pjb" });
 root.createEl("style", { text: `
 .pjb-cols { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; overflow-x: auto; }
-@media (max-width: 700px) { .pjb-cols { grid-template-columns: repeat(4, 78vw); scroll-snap-type: x mandatory; } .pjb-col { scroll-snap-align: start; } }
+@media (max-width: 700px) { .pjb-cols { grid-template-columns: 1fr; overflow-x: visible; } .pjb-col { min-height: 0; } }
 .pjb-col { background: var(--background-secondary); border-radius: 8px; padding: 6px; min-height: 80px; }
 .pjb-col.is-over { outline: 2px dashed var(--interactive-accent); outline-offset: -2px; }
 .pjb-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; padding: 2px 4px 6px; }

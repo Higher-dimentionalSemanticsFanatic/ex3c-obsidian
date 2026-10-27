@@ -370,7 +370,7 @@ h("style", {}, root, `
 .pln-bar input[type=number] { width: 4.5em; }
 .pln-bar input[type=time] { width: 7em; }
 .pln-sub { font-size: 11px; color: var(--text-muted); }
-.pln-box { border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); padding: 8px 10px; margin-bottom: 10px; }
+.pln-box { border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); padding: 8px 10px; margin-bottom: 10px; container-type: inline-size; }
 .pln-box h4 { margin: 0 0 6px; }
 .pln-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
 @media (max-width: 700px) { .pln-week { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -400,6 +400,18 @@ h("style", {}, root, `
 .pln-table { width: 100%; border-collapse: collapse; }
 .pln-table td { padding: 3px 4px; border-top: 1px solid var(--background-modifier-border); vertical-align: top; font-size: 12px; }
 .pln-table tr.is-suggested td { background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
+.pln-table .pln-acts { display: inline-flex; vertical-align: middle; } /* the ✎ sits after the plan buttons, not on a line of its own */
+/* a narrow card (a phone): each task wraps onto two lines, text first, the plan buttons under it, instead of widening the page */
+@container (max-width: 520px) {
+  .pln-table, .pln-table tbody { display: block; }
+  .pln-table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 0; border-top: 1px solid var(--background-modifier-border); }
+  .pln-table td { border-top: none; padding: 0; }
+  .pln-table td.pln-c-text { flex: 1 1 0; min-width: 0; }
+  .pln-table td.pln-c-act { flex-basis: 100%; display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
+  .pln-table td.pln-c-act > * { margin-left: 0 !important; }
+  .pln-table tr.is-suggested { background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
+  .pln-table tr.is-suggested td { background: none; }
+}
 .pln-time { font-variant-numeric: tabular-nums; color: var(--text-muted); white-space: nowrap; }
 .pln-tl-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; border-top: 1px solid var(--background-modifier-border); }
 .pln-tl-row.is-now { font-weight: 600; }
@@ -859,13 +871,13 @@ function render() {
     const c0 = h("td", {}, tr);
     const cb = h("input", { type: "checkbox", class: "task-list-item-checkbox" }, c0);
     cb.addEventListener("click", e => { e.preventDefault(); toggle(r); });
-    const c1 = h("td", {}, tr);
+    const c1 = h("td", { class: "pln-c-text" }, tr);
     const tx = h("span", { style: "cursor:pointer" }, c1, label(r.raw));
     tx.addEventListener("click", () => openAt(r));
     h("div", { class: "pln-sub" }, c1, r.project);
     const c2 = h("td", {}, tr); chips(c2, r, m);
     if (m.cost !== null) h("span", { class: "pln-chip" }, c2, m.cost.toLocaleString(undefined, { style: "currency", currency: "EUR" }));
-    const c3 = h("td", { style: "white-space:nowrap;text-align:right" }, tr);
+    const c3 = h("td", { class: "pln-c-act", style: "white-space:nowrap;text-align:right" }, tr);
     const b1 = h("button", { class: "pln-btn" }, c3, "Today"); b1.addEventListener("click", () => schedule(r, TODAY));
     const b2 = h("button", { class: "pln-btn", style: "margin-left:3px" }, c3, "Tomorrow"); b2.addEventListener("click", () => schedule(r, TOMORROW));
     const sel = h("select", { class: "dropdown", style: "margin-left:3px;font-size:11px", "aria-label": "Plan on a day" }, c3);
@@ -887,12 +899,12 @@ function render() {
     const lt = h("table", { class: "pln-table" }, det);
     for (const r of suggestedOrder(later)) {
       const m = meta(r.raw), tr = h("tr", {}, lt); menuOn(tr, r);
-      const c1 = h("td", {}, tr);
+      const c1 = h("td", { class: "pln-c-text" }, tr);
       const tx = h("span", { style: "cursor:pointer;color:var(--text-muted)" }, c1, label(r.raw));
       tx.addEventListener("click", () => openAt(r));
       h("div", { class: "pln-sub" }, c1, `${r.project} · ${blockers(r).length ? `blocked by ⛔ ${blockers(r).map(b => label(b.raw)).join(", ")}` : r.after ? `after: ${r.after}` : "waiting"}`);
       const c2 = h("td", {}, tr); chips(c2, r, m);
-      const c3 = h("td", { style: "white-space:nowrap;text-align:right" }, tr);
+      const c3 = h("td", { class: "pln-c-act", style: "white-space:nowrap;text-align:right" }, tr);
       const b = h("button", { class: "pln-btn", title: "Plan it anyway" }, c3, "Today"); b.addEventListener("click", () => schedule(r, TODAY));
       const b2 = h("button", { class: "pln-btn", style: "margin-left:3px" }, c3, "Tomorrow"); b2.addEventListener("click", () => schedule(r, TOMORROW));
     }
