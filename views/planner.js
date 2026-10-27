@@ -235,8 +235,21 @@ function meta(raw) {
     recur: /🔁/u.test(raw), soon: SOON_LINES.has(raw.trim()) || /(^|\s)#soon\b/i.test(raw), created: raw.match(/➕ (\d{4}-\d{2}-\d{2})/u)?.[1] ?? null, id: raw.match(/🆔 ([\w-]+)/u)?.[1] ?? null,
     deps: (raw.match(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u)?.[1] ?? "").split(/\s*,\s*/).filter(Boolean),
     pri: pm ? PRI[pm[0]] : 3, cost: price !== undefined ? price * (num(f.qty) ?? 1) : null, done: isDoneLine(raw), mode: (f.mode ?? "").toLowerCase(),
+    shops: shopsOf(raw),
   };
 }
+// [shop:: Ikea, Gamma] or the field written twice: the shops where a task can be bought.
+function shopsOf(raw) { return [...raw.matchAll(/\[shop::\s*([^\]]*)\]/g)].flatMap(m => m[1].split(",")).map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean); }
+// One errand per shop: tasks with a shop are bought on one trip. A task with several shops joins the shop that
+// already has the most of the list (ties: the first shop written). Returns the trips and the tasks without a shop.
+function errands(list) {
+  const trips = new Map(), loose = [], multi = [];
+  for (const r of list) { const s = meta(r.raw).shops; if (!s.length) loose.push(r); else if (s.length === 1) (trips.get(s[0]) ?? trips.set(s[0], []).get(s[0])).push(r); else multi.push(r); }
+  for (const r of multi) { const s = meta(r.raw).shops, best = s.reduce((b, x) => ((trips.get(x)?.length ?? 0) > (trips.get(b)?.length ?? 0) ? x : b), s[0]); (trips.get(best) ?? trips.set(best, []).get(best)).push(r); }
+  return { trips, loose };
+}
+// A trip counts as one task of your default estimate, or its items' own estimates added up when that is more.
+function errandMin(list) { return Math.max(GUESS, list.reduce((t, r) => t + (meta(r.raw).share ?? 0), 0)); }
 // Is the task on this day? A spread task is on every day from 🛫 to ⏳.
 const onDate = (m, date) => (m.spread ? m.start0 <= date && date <= m.sched : m.sched === date);
 // One meaning of urgent everywhere: overdue or due within SOON days, then high priority.
@@ -291,6 +304,7 @@ for (const page of pages) {
       const r = { path: it.path, line: it.line, raw: `${"\t".repeat(depth)}- [${it.status}] ${text}`, depth, kids: [], isNext: false, someday, inSoon,
         project: tag ? tag.slice(9) : owner, area: areaOf(text, page) };
       r.key = `${r.path}|${label(r.raw)}`;
+      if (rows.some(x => x.key === r.key)) r.key += `|${rows.filter(x => x.key.startsWith(`${r.key}|`)).length + 2}`; // the same text twice in a note (a repeat purchase) stays two tasks
       if (inSoon) SOON_LINES.add(r.raw.trim());
       rows.push(r);
       if (parent) parent.kids.push(r);
@@ -378,6 +392,7 @@ h("style", {}, root, `
 .pln-acts { display: flex; gap: 1px; flex-shrink: 0; }
 .pln-acts span { cursor: pointer; color: var(--text-muted); padding: 0 2px; }
 .pln-acts span:hover { color: var(--text-accent); }
+.pln-errand { font-size: 13px; margin: 2px 0 6px; overflow-wrap: anywhere; }
 .pln-chip { font-size: 10px; padding: 0 5px; border-radius: 8px; border: 1px solid var(--background-modifier-border); color: var(--text-muted); white-space: nowrap; }
 .pln-chip.is-due { color: var(--color-red); border-color: var(--color-red); }
 .pln-chip.is-soon { color: var(--color-orange); border-color: var(--color-orange); }
@@ -588,12 +603,15 @@ function chips(parent, r, m, { showSched = false } = {}) {
     h("span", { class: `pln-chip${d < 0 ? " is-due" : d <= 2 ? " is-soon" : ""}`, title: `Due ${m.due}` }, parent, d < 0 ? `overdue ${-d}d` : d === 0 ? "due today" : d === 1 ? "due tomorrow" : `due in ${d}d`);
   }
   if (m.pri < 3) h("span", { class: "pln-chip", title: "Priority" }, parent, PRI_LABEL[m.pri]);
+  if (m.shops.length) h("span", { class: "pln-chip", title: `Bought on one trip with the other tasks for ${m.shops.join(" or ")} (the [shop::] field)` }, parent, `🛒 ${m.shops.join(" / ")}`);
   if (showSched && m.sched) h("span", { class: "pln-chip" }, parent, dayLabel(m.sched));
 }
 // Work in a list of tasks; a task spread over days counts its share for one day.
 function minutes(list) {
   let known = 0, guessed = 0, missing = 0;
-  for (const r of list) { const m = meta(r.raw); if (m.event) continue; /* events are busy time, not task load */ if (m.est === null) { guessed += GUESS; missing++; } else known += m.share ?? m.est; }
+  const { trips, loose } = errands(list.filter(r => !meta(r.raw).event));
+  for (const t of trips.values()) known += errandMin(t);
+  for (const r of loose) { const m = meta(r.raw); if (m.event) continue; /* events are busy time, not task load */ if (m.est === null) { guessed += GUESS; missing++; } else known += m.share ?? m.est; }
   return { known, guessed, missing, total: known + guessed };
 }
 const withBuffer = min => min * (1 + (Number(state.buffer) || 0) / 100);
@@ -630,14 +648,25 @@ const tasksOn = date => ALL.filter(r => { const m = meta(r.raw); return onDate(m
 function suggestFor(date) {
   let used = withBuffer(minutes(tasksOn(date).filter(r => !meta(r.raw).done)).total);
   const { budget, left } = date === TODAY ? todayBudget() : { budget: capMin(date), left: Infinity };
-  const pick = [];
-  for (const r of suggestedOrder(pool())) {
+  const pick = [], trips = [], seen = new Set();
+  const cand = suggestedOrder(pool()).filter(r => { const m = meta(r.raw); return !(m.recur && m.sched); });
+  // the most urgent item of a shop brings the whole shop's list along, as one errand
+  const { trips: byShop } = errands(cand.filter(r => meta(r.raw).shops.length));
+  const tripOf = new Map([...byShop].flatMap(([shop, list]) => list.map(r => [r.key, { shop, list }])));
+  for (const r of cand) {
+    if (seen.has(r.key)) continue;
+    const t = tripOf.get(r.key);
+    if (t) {
+      for (const x of t.list) seen.add(x.key);
+      const e = withBuffer(errandMin(t.list));
+      if (used + e <= budget) { pick.push(...t.list.map(x => x.key)); trips.push({ shop: t.shop, keys: t.list.map(x => x.key), min: e }); used += e; }
+      continue;
+    }
     const m = meta(r.raw);
-    if (m.recur && m.sched) continue;
     const e = withBuffer(m.est === null ? GUESS : m.est / spanDays(m.est));
     if (used + e <= budget) { pick.push(r.key); used += e; }
   }
-  suggestion = { date, keys: pick };
+  suggestion = { date, keys: pick, trips };
   suggestionNote = date === TODAY && left < capMin(TODAY) ? ` Only ${fmtEst(left)} left before your day ends at ${state.dayEnd}.` : "";
   render();
 }
@@ -740,11 +769,22 @@ function render() {
     const box = h("div", { class: "pln-box" }, root);
     const { date, keys } = suggestion, name = dayName(date);
     const picked = keys.map(k => byKey.get(k)).filter(Boolean);
-    const mins = picked.reduce((t, r) => { const m = meta(r.raw); return t + withBuffer(m.est === null ? GUESS : m.est / spanDays(m.est)); }, 0);
-    const spreads = picked.filter(r => spanDays(meta(r.raw).est) > 1).length;
+    const trips = (suggestion.trips ?? []).filter(t => t.keys.some(k => byKey.has(k)));
+    const inTrip = new Set(trips.flatMap(t => t.keys));
+    const mins = withBuffer(minutes(picked).total);
+    const spreads = picked.filter(r => !inTrip.has(r.key) && spanDays(meta(r.raw).est) > 1).length;
+    const tasksN = picked.length - inTrip.size + trips.length;
     h("p", { style: "margin:0 0 6px" }, box, picked.length
-      ? `Suggested for ${name}: ${picked.length} task${picked.length === 1 ? "" : "s"}, about ${fmtEst(mins)} with buffer. Overdue and due within ${SOON} days first, then Soon, then high priority, then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
+      ? `Suggested for ${name}: ${tasksN} task${tasksN === 1 ? "" : "s"}${trips.length ? ` (${trips.length} of them ${trips.length === 1 ? "an errand" : "errands"}, one trip per shop)` : ""}, about ${fmtEst(mins)} with buffer. Overdue and due within ${SOON} days first, then Soon, then high priority, then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
       : `Nothing fits: ${name} is already full, or there are no next steps.${suggestionNote}${date === TODAY ? " Try Suggest tomorrow." : ""}`);
+    for (const t of trips) {
+      const items = t.keys.map(k => byKey.get(k)).filter(Boolean);
+      const cost = items.reduce((c, r) => c + (meta(r.raw).cost ?? 0), 0);
+      const row = h("div", { class: "pln-errand" }, box);
+      h("b", {}, row, `🛒 ${t.shop}`);
+      h("span", { class: "pln-sub" }, row, ` · ${items.length} item${items.length === 1 ? "" : "s"} · ${fmtEst(t.min)}${cost ? ` · ${cost.toLocaleString(undefined, { style: "currency", currency: "EUR" })}` : ""}: `);
+      h("span", {}, row, items.map(r => label(r.raw)).join(", "));
+    }
     if (picked.length) {
       const ap = h("button", { class: "pln-btn mod-cta" }, box, `Plan these for ${name}`);
       ap.addEventListener("click", async () => { const list = keys.map(k => byKey.get(k)).filter(Boolean); suggestion = null; await bulk(list, `Plan ${list.length} task${list.length === 1 ? "" : "s"} for ${name}`, line => planLine(line, date)); });

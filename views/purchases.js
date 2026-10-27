@@ -1,7 +1,10 @@
-// Every open task with a price, from every project, in one sortable list.
+// Every open task with a price or a shop, from every project, in one sortable list.
 // Usage: await dv.view("Meta/views/purchases", { currency: "EUR" })
 // Task format: - [ ] Buy timber [price:: 7.90] [qty:: 14] [shop:: Timber yard]
-// price is per item, qty defaults to 1, total = price × qty. Any other [field:: value] on these
+// price is per item, qty defaults to 1, total = price × qty. [shop:: Ikea, Action] (or the field twice) means
+// either shop: grouped by shop, the task is listed under each, and counted once in the grand total.
+// A ticked task with a price and a ✅ date is the price history: each item shows what you last paid, where and when.
+// Any other [field:: value] on these
 // tasks shows up as an extra column and sort option. Ticked items stay visible (struck through,
 // out of the totals) until the page refreshes, so a mis-click can be undone.
 const EXCL = ["Templates/", "scripts/", "wiki/", ".trash/"];
@@ -18,6 +21,7 @@ const strip = s => s.replace(TASK_RE, "").replace(/\s*✅ \d{4}-\d{2}-\d{2}/, ""
 const isDoneLine = s => /^\s*[-*+] \[[xX-]\]/.test(s);
 const parseFields = s => { const f = {}; for (const m of s.matchAll(/\[([\w-]+)::\s*([^\]]*)\]/g)) f[m[1]] = m[2].trim(); return f; };
 const num = v => (v === undefined || v === "" || isNaN(Number(v)) ? undefined : Number(v));
+function shopsOf(raw) { return [...raw.matchAll(/\[shop::\s*([^\]]*)\]/g)].flatMap(m => m[1].split(",")).map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean); }
 const clean = s => strip(s).replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/#project\/\S+/g, "").replace(/\s+/g, " ").trim();
 // r = { path, line, raw } where raw is the full task line as last seen.
 function findLine(lines, r) {
@@ -77,16 +81,28 @@ const areaOf = (raw, page) => { const m = String(raw).match(AREA_TAG); if (m) re
 // Sample notes (tagged example) are left out unless a note passes samples: true.
 const SAMPLES = input?.samples ?? false;
 const isSample = p => p.example === true || (p.file.tags ?? []).includes("#example");
-const rows = dv.pages().where(p => !EXCL.some(e => p.file.path.startsWith(e)) && !/(^|\/)templates\//i.test(p.file.path) && String(p.type ?? "") !== "checklist" && (SAMPLES || !isSample(p))).file.tasks
-  .where(t => !(t.completed || t.status === "-") && /\[price::/.test(t.text) && (!AREA || areaOf(t.text, dv.page(t.path)) === AREA)).array()
+const allTasks = dv.pages().where(p => !EXCL.some(e => p.file.path.startsWith(e)) && !/(^|\/)templates\//i.test(p.file.path) && String(p.type ?? "") !== "checklist" && (SAMPLES || !isSample(p))).file.tasks;
+// what you last paid for each item: the newest ticked task with the same text, a price and a ✅ date (any area)
+const PAID = new Map();
+for (const t of allTasks.where(t => t.completed && /\[price::/.test(t.text)).array()) {
+  const raw = `- [x] ${t.text}`, date = t.text.match(/✅ (\d{4}-\d{2}-\d{2})/u)?.[1], price = num(parseFields(raw).price);
+  if (!date || price === undefined) continue;
+  const k = itemKey(raw), old = PAID.get(k);
+  if (!old || old.date < date) PAID.set(k, { date, price, shop: shopsOf(raw).join(", ") });
+}
+// the item without its dates, priority and other Tasks signs, so a planned or due item still matches its history
+function itemKey(raw) { return clean(raw).replace(/[📅⏳🛫➕✅❌]\uFE0F?\s*\d{4}-\d{2}-\d{2}/gu, "").replace(/[🔺⏫🔼🔽⏬]\uFE0F?/gu, "").replace(/🔁[^📅⏳🛫➕✅❌🆔⛔]*/u, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+const dmy = d => d.split("-").reverse().join("-");
+const rows = allTasks
+  .where(t => !(t.completed || t.status === "-") && /\[(price|shop)::/.test(t.text) && (!AREA || areaOf(t.text, dv.page(t.path)) === AREA)).array()
   .map(t => {
     const tag = (t.tags ?? []).find(x => x.startsWith("#project/"));
     return { path: t.path, line: t.line, raw: `- [${t.status}] ${t.text}`, project: tag ? tag.slice(9) : (dv.page(t.path)?.file.name ?? t.path) };
   });
 function info(r) {
   const fields = parseFields(r.raw);
-  const price = num(fields.price) ?? 0, qty = num(fields.qty) ?? 1;
-  return { fields, item: clean(r.raw), qty, price, total: price * qty, shop: fields.shop ?? "", project: r.project, done: isDoneLine(r.raw) };
+  const p = num(fields.price), price = p ?? 0, qty = num(fields.qty) ?? 1, shops = shopsOf(r.raw);
+  return { fields, item: clean(r.raw), qty, price, priced: p !== undefined, total: price * qty, shops, shop: shops.join(", "), project: r.project, done: isDoneLine(r.raw) };
 }
 
 let state = { sort: "total", desc: true, group: "shop" };
@@ -94,7 +110,7 @@ try { Object.assign(state, JSON.parse(localStorage.getItem(KEY) ?? "{}")); } cat
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
 const root = dv.container.createEl("div", { cls: "lifeos-widget" });
-if (!rows.length) { root.createEl("p", { text: "No open tasks with a [price:: ] field yet." }); return; }
+if (!rows.length) { root.createEl("p", { text: "No open tasks with a [price:: ] or [shop:: ] field yet." }); return; }
 const bar = root.createEl("div", { attr: { style: "display:flex;gap:0.6em;flex-wrap:wrap;align-items:center;margin-bottom:0.6em" } });
 const out = root.createEl("div");
 const STD = ["total", "price", "qty", "shop", "project", "item"];
@@ -125,10 +141,11 @@ function draw() {
     return state.desc ? -c : c;
   });
   const groups = new Map();
+  const add = (g, e) => { if (!groups.has(g)) groups.set(g, []); groups.get(g).push(e); };
   for (const e of list) {
-    const g = state.group === "none" ? "" : (e.i[state.group] || `No ${state.group}`);
-    if (!groups.has(g)) groups.set(g, []);
-    groups.get(g).push(e);
+    if (state.group === "none") add("", e);
+    else if (state.group === "shop") { if (!e.i.shops.length) add("No shop", e); for (const s of e.i.shops) add(s, { ...e, here: s }); }
+    else add(e.i[state.group] || `No ${state.group}`, e);
   }
   const cols = ["", "Item", "Qty", "Unit", "Total", ...(state.group === "shop" ? [] : ["Shop"]), ...(state.group === "project" ? [] : ["Project"]), ...ex, ""];
   const table = out.createEl("table");
@@ -141,7 +158,7 @@ function draw() {
       const open = es.filter(e => !e.i.done).length;
       body.createEl("tr").createEl("td", { text: `${g}  ·  ${open} item${open === 1 ? "" : "s"}  ·  ${money(sum(es))}`, attr: { colspan: cols.length, style: "font-weight:600;padding-top:0.8em" } });
     }
-    for (const { r, i } of es) {
+    for (const { r, i, here } of es) {
       const tr = body.createEl("tr", { attr: { style: i.done ? "color:var(--text-faint);text-decoration:line-through" : "" } });
       const cb = tr.createEl("td").createEl("input", { type: "checkbox", cls: "task-list-item-checkbox" });
       cb.checked = i.done;
@@ -154,19 +171,26 @@ function draw() {
         if (!(await writeTask(r, "toggle"))) r.raw = before;
         draw();
       });
-      const it = tr.createEl("td").createEl("a", { text: i.item, cls: "internal-link" });
+      const itd = tr.createEl("td");
+      const it = itd.createEl("a", { text: i.item, cls: "internal-link" });
       it.addEventListener("click", () => app.workspace.openLinkText(r.path, "", false, { eState: { line: r.line } }));
+      const notes = [];
+      const also = here ? i.shops.filter(s => s !== here) : [];
+      if (also.length) notes.push(`also at ${also.join(", ")}`);
+      const paid = PAID.get(itemKey(r.raw));
+      if (paid) notes.push(`last paid ${money(paid.price)}${paid.shop ? ` at ${paid.shop}` : ""}, ${dmy(paid.date)}`);
+      if (notes.length) itd.createEl("div", { text: notes.join(" · "), attr: { style: "font-size:var(--font-smallest);color:var(--text-muted)" } });
       tr.createEl("td", { text: String(i.qty) });
-      tr.createEl("td", { text: money(i.price) });
-      tr.createEl("td", { text: money(i.total) });
+      tr.createEl("td", { text: i.priced ? money(i.price) : "no price", attr: i.priced ? {} : { style: "color:var(--text-faint)" } });
+      tr.createEl("td", { text: i.priced ? money(i.total) : "" });
       if (state.group !== "shop") tr.createEl("td", { text: i.shop });
       if (state.group !== "project") tr.createEl("td", { text: i.project });
       for (const k of ex) tr.createEl("td", { text: i.fields[k] ?? "" });
       iconButton(tr.createEl("td"), "pencil", "Edit task", async () => { if (await writeTask(r, "edit")) { controls(); draw(); } });
     }
   }
-  const open = list.filter(e => !e.i.done);
-  out.createEl("p", { text: `${open.length} items, ${money(sum(list))} in total.`, attr: { style: "font-weight:600" } });
+  const open = list.filter(e => !e.i.done), noPrice = open.filter(e => !e.i.priced).length, multi = open.filter(e => e.i.shops.length > 1).length;
+  out.createEl("p", { text: `${open.length} items, ${money(sum(list))} in total${noPrice ? ` (${noPrice} without a price)` : ""}.${state.group === "shop" && multi ? ` ${multi} can be bought at more than one shop: they are listed under each and counted once here.` : ""}`, attr: { style: "font-weight:600" } });
 }
 controls();
 draw();
