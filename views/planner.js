@@ -951,6 +951,8 @@ let tlDay = UI.day;
 let picked = UI.picked; // key of a pool task chosen by tap; the next tap on the timeline places it
 const scrollerOf = el => { for (let p = el?.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowY; if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p; } return null; };
 const SNAP = 15, PXM = 0.8; // 15 minute steps, 48 px per hour
+// the app's Size setting zooms the page: pointer positions arrive zoomed, block positions are not
+const ZM = () => dv.container.currentCSSZoom || 1;
 const durOf = r => { const m = meta(r.raw); return m.start !== null && m.end > m.start ? m.end - m.start : Math.max(SNAP, Math.ceil(withBuffer(m.spread ? m.share ?? GUESS : (m.est ?? GUESS) / spanDays(m.est)) / 5) * 5); };
 // a time on a spread task keeps its days (the time is the same on each of them)
 const timeOn = (line, day, s, e) => {
@@ -971,7 +973,7 @@ function draggable(el, r, kind, extra = {}) {
     if (ev.button > 0 || ev.target.closest("input, .pln-x") || (kind !== "resize" && ev.target.closest(".pln-rs"))) return;
     if (kind === "resize") ev.stopPropagation();
     const d = { r, kind, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, active: false, el, ...extra, touch: ev.pointerType === "touch" };
-    if (kind === "block") d.offset = Math.round((ev.clientY - el.getBoundingClientRect().top) / PXM / SNAP) * SNAP; // grab point inside the block
+    if (kind === "block") d.offset = Math.round((ev.clientY - el.getBoundingClientRect().top) / (PXM * ZM()) / SNAP) * SNAP; // grab point inside the block
     drag = d;
     const begin = () => {
       if (drag !== d) return;
@@ -1026,7 +1028,7 @@ function autoScroll(d) {
 const clearHints = () => { for (const x of root.querySelectorAll(".is-drop")) x.classList.remove("is-drop"); root.querySelector(".pln-blk.is-ghost")?.remove(); };
 function gridMinute(grid, y, offset = 0) {
   const rect = grid.getBoundingClientRect();
-  const raw = Number(grid.dataset.start) + (y - rect.top) / PXM - offset;
+  const raw = Number(grid.dataset.start) + (y - rect.top) / (PXM * ZM()) - offset;
   return Math.max(Number(grid.dataset.start), Math.min(Number(grid.dataset.end) - SNAP, Math.round(raw / SNAP) * SNAP));
 }
 function target(x, y) {

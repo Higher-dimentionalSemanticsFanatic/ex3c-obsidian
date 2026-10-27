@@ -7,6 +7,8 @@
 // With allProjects (the EX3C Agenda Project steps widget) you pick projects at the top and each shows as Gantt charts
 // (one per heading that holds tasks) or as the numbered steps list. Bars use 🛫 start, ⏳ scheduled and 📅 due;
 // steps without dates are drawn dashed, in outline order, from their estimates. Dragging a bar writes real dates.
+// the app's Size setting zooms the page: pointer moves arrive zoomed, bar positions are not
+const ZM = () => dv.container.currentCSSZoom || 1;
 const AREA = input?.area || null;
 const AREA_KEYS = app.plugins?.plugins?.["ex3c-agenda"]?.areaKeys?.() ?? ["work", "study", "personal"];
 const AREA_TAG = new RegExp(`(^|\\s)#(${AREA_KEYS.join("|") || "(?!)"})(?=\\s|$)`, "i");
@@ -538,15 +540,15 @@ function dragRow(el, r, rows, labels, ROW, kind, PXH = 0) {
     const begin = () => { d.active = true; (bar ?? el.parentElement).classList.add("is-dragging"); };
     if (d.touch) d.timer = setTimeout(begin, 300);
     const box = labels.getBoundingClientRect();
-    const rowAt = y => Math.floor((y - box.top - 36) / ROW);
+    const z = ZM(), rowAt = y => Math.floor(((y - box.top) / z - 36) / ROW);
     let marker = null;
     const move = e => {
-      const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+      const dx = (e.clientX - d.x0) / z, dy = (e.clientY - d.y0) / z;
       if (!d.active) { if (d.touch) { if (Math.hypot(dx, dy) > 8) end(null); return; } if (Math.hypot(dx, dy) < 5) return; begin(); }
       d.vertical = Math.abs(dy) > Math.abs(dx) || kind === "row";
       marker?.remove(); marker = null;
       if (d.vertical) {
-        const at = Math.max(0, Math.min(rows.length, rowAt(e.clientY + ROW / 2)));
+        const at = Math.max(0, Math.min(rows.length, rowAt(e.clientY + (ROW * z) / 2)));
         d.target = at;
         marker = labels.createEl("div", { cls: "pg-drop", attr: { style: `top:${36 + at * ROW - 1}px` } });
         if (bar) { bar.style.left = `${left0}px`; bar.style.top = `${top0 + dy}px`; }
@@ -638,7 +640,7 @@ function dragEst(grip, bar, r, PXH) {
     const len0 = r.h1 - r.h0;
     const begin = () => { d.active = true; bar.classList.add("is-dragging"); };
     if (d.touch) d.timer = setTimeout(begin, 300);
-    const minutes = e => Math.max(15, Math.round((len0 + (e.clientX - d.x0) / PXH) / 15) * 15);
+    const minutes = e => Math.max(15, Math.round((len0 + (e.clientX - d.x0) / ZM() / PXH) / 15) * 15);
     const move = e => {
       if (!d.active) { if (d.touch) { if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 8) end(null); return; } if (Math.abs(e.clientX - d.x0) < 4) return; begin(); }
       d.min = minutes(e); bar.style.width = `${d.min * PXH}px`; bar.title = `Estimate ${fmtEst(d.min)}`;
@@ -668,7 +670,7 @@ function dragBar(el, r, kind, PX) {
     const begin = () => { d.active = true; bar.classList.add("is-dragging"); };
     if (d.touch) d.timer = setTimeout(begin, 300);
     const move = e => {
-      const dx = e.clientX - d.x0;
+      const dx = (e.clientX - d.x0) / ZM();
       if (!d.active) { if (d.touch) { if (Math.hypot(dx, e.clientY - d.y0) > 8) end(false); return; } if (Math.abs(dx) < 4) return; begin(); }
       d.delta = Math.round(dx / PX);
       if (kind === "move") bar.style.left = `${left0 + d.delta * PX}px`; else bar.style.width = `${Math.max(PX, w0 + d.delta * PX)}px`;
@@ -770,7 +772,7 @@ function dragGroup(el, r, PX) {
     const begin = () => { d.active = true; mine.forEach(b => b.classList.add("is-dragging")); };
     if (d.touch) d.timer = setTimeout(begin, 300);
     const move = e => {
-      const dx = e.clientX - d.x0;
+      const dx = (e.clientX - d.x0) / ZM();
       if (!d.active) { if (d.touch) { if (Math.hypot(dx, e.clientY - d.y0) > 8) end(false); return; } if (Math.abs(dx) < 4) return; begin(); }
       d.delta = Math.round(dx / PX);
       mine.forEach((b, i) => { b.style.left = `${left0[i] + d.delta * PX}px`; });
