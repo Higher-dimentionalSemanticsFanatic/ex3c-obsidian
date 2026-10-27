@@ -615,6 +615,8 @@ function minutes(list) {
   return { known, guessed, missing, total: known + guessed };
 }
 const withBuffer = min => min * (1 + (Number(state.buffer) || 0) / 100);
+// A task shows its own length; the buffer is added only to totals, and says so: "3h 8m + buffer = 4h".
+const plusBuffer = min => { const nb = x => fmtEst(x).replace(/ /g, "\u00a0"); return Number(state.buffer) && min ? `${nb(min)} + buffer = ${nb(withBuffer(min))}` : fmtEst(min); }; // no break inside "6h 59m"
 // a day's hours for tasks: its #tasks blocks in the Ideal Week, else your Hours per day
 const capMin = date => {
   const base = date && IDEAL_ON ? idealOn(date).filter(b => b.tasks).reduce((t, b) => t + b.e - b.s, 0) : (Number(state.capacity) || 0) * 60;
@@ -659,7 +661,7 @@ function suggestFor(date) {
     if (t) {
       for (const x of t.list) seen.add(x.key);
       const e = withBuffer(errandMin(t.list));
-      if (used + e <= budget) { pick.push(...t.list.map(x => x.key)); trips.push({ shop: t.shop, keys: t.list.map(x => x.key), min: e }); used += e; }
+      if (used + e <= budget) { pick.push(...t.list.map(x => x.key)); trips.push({ shop: t.shop, keys: t.list.map(x => x.key), min: errandMin(t.list) }); used += e; }
       continue;
     }
     const m = meta(r.raw);
@@ -771,11 +773,11 @@ function render() {
     const picked = keys.map(k => byKey.get(k)).filter(Boolean);
     const trips = (suggestion.trips ?? []).filter(t => t.keys.some(k => byKey.has(k)));
     const inTrip = new Set(trips.flatMap(t => t.keys));
-    const mins = withBuffer(minutes(picked).total);
+    const mins = minutes(picked).total;
     const spreads = picked.filter(r => !inTrip.has(r.key) && spanDays(meta(r.raw).est) > 1).length;
     const tasksN = picked.length - inTrip.size + trips.length;
     h("p", { style: "margin:0 0 6px" }, box, picked.length
-      ? `Suggested for ${name}: ${tasksN} task${tasksN === 1 ? "" : "s"}${trips.length ? ` (${trips.length} of them ${trips.length === 1 ? "an errand" : "errands"}, one trip per shop)` : ""}, about ${fmtEst(mins)} with buffer. Overdue and due within ${SOON} days first, then Soon, then high priority, then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
+      ? `Suggested for ${name}: ${tasksN} task${tasksN === 1 ? "" : "s"}${trips.length ? ` (${trips.length} of them ${trips.length === 1 ? "an errand" : "errands"}, one trip per shop)` : ""}, about ${plusBuffer(mins)}. Overdue and due within ${SOON} days first, then Soon, then high priority, then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
       : `Nothing fits: ${name} is already full, or there are no next steps.${suggestionNote}${date === TODAY ? " Try Suggest tomorrow." : ""}`);
     for (const t of trips) {
       const items = t.keys.map(k => byKey.get(k)).filter(Boolean);
@@ -819,7 +821,7 @@ function render() {
     const mm = minutes(open), planned = withBuffer(mm.total), cap = capMin(date);
     const capEl = h("div", { class: `pln-cap${planned > cap ? (date > TODAY ? " is-full" : " is-over") : planned > cap * 0.85 ? " is-full" : ""}`, title: "Planned time with buffer, against your hours per day" }, col);
     h("div", { style: `width:${cap ? Math.min(100, (100 * planned) / cap) : 0}%` }, capEl);
-    h("div", { class: "pln-sub" }, col, `${fmtEst(planned)} of ${fmtEst(cap)}${mm.missing ? ` · ${mm.missing} without estimate` : ""}`);
+    h("div", { class: "pln-sub" }, col, `${plusBuffer(mm.total)} of ${fmtEst(cap)}${mm.missing ? ` · ${mm.missing} without estimate` : ""}`);
     for (const r of [...tasks].sort((a, b) => (meta(a.raw).start ?? 9999) - (meta(b.raw).start ?? 9999))) item(col, r, { day: date });
     birthdayMarks(col, date);
     const deadlines = ALL.filter(r => { const m = meta(r.raw); return m.due === date && !m.done && !onDate(m, date); });
@@ -1164,7 +1166,7 @@ function selPanel(box, where) {
   if (st.days.length > 1) h("div", { class: "pln-sub" }, p, `Free per day: ${st.days.map(d => `${asDate(d.day).toLocaleDateString(undefined, { weekday: "short" })} ${fmtEst(d.free)}`).join(" · ")}`);
   const notes = [];
   if (st.cost) notes.push(`cost of these tasks ${eur(st.cost)}`);
-  if (st.untimed.length) notes.push(`${st.untimed.length} more on ${st.days.length > 1 ? "these days" : "this day"} without a time (${fmtEst(withBuffer(minutes(st.untimed).total))}${st.untimedCost ? `, ${eur(st.untimedCost)}` : ""})`);
+  if (st.untimed.length) notes.push(`${st.untimed.length} more on ${st.days.length > 1 ? "these days" : "this day"} without a time (${plusBuffer(minutes(st.untimed).total)}${st.untimedCost ? `, ${eur(st.untimedCost)}` : ""})`);
   if (st.due.length) notes.push(`${st.due.length} due on ${st.days.length > 1 ? "these days" : "this day"}`);
   if (notes.length) h("div", { class: "pln-sub" }, p, notes.join(" · ").replace(/^./, c => c.toUpperCase()));
   const ticked = (UI.selTicked ??= {});
@@ -1254,9 +1256,9 @@ function poolItem(parent, r, { day = null } = {}) {
   const it = h("div", { class: `pln-pi${picked === r.key ? " is-picked" : ""}${suggestion?.keys?.includes(r.key) ? " is-suggested" : ""}`, title: "Drag onto the hours, or tap it and then tap an hour", ...(AREA_COLORS[r.area] ? { style: `--blk:${AREA_COLORS[r.area]}` } : {}) }, parent);
   h("span", { class: "pln-text" }, it, label(r.raw));
   const cs = h("span", { class: "pln-chips" }, it);
-  h("span", { class: `pln-chip${m.est === null ? " is-guess" : ""}` }, cs, fmtEst(durOf(r)));
+  h("span", { class: `pln-chip${m.est === null ? " is-guess" : ""}`, title: m.spread ? `This day's share of the task` : m.est === null ? `No estimate yet; planned as ${GUESS} minutes` : "Estimate" }, cs, m.spread ? fmtEst(m.share ?? GUESS) : m.est === null ? `~${GUESS}m` : fmtEst(m.est));
   if (m.spread && day) h("span", { class: "pln-chip", title: `Spread over ${m.ndays} days` }, cs, `${daysUntil(day) - daysUntil(m.start0) + 1}/${m.ndays}`);
-  else if (!m.spread && !m.recur && spanDays(m.est) > 1) h("span", { class: "pln-chip is-soon", title: `${fmtEst(m.est)} is more than your ${state.capacity} hours a day: putting it on the hours spreads it over ${spanDays(m.est)} days, ${fmtEst(durOf(r))} each` }, cs, `⇉ ${spanDays(m.est)} days`);
+  else if (!m.spread && !m.recur && spanDays(m.est) > 1) h("span", { class: "pln-chip is-soon", title: `${fmtEst(m.est)} is more than your ${state.capacity} hours a day: putting it on the hours spreads it over ${spanDays(m.est)} days, ${fmtEst(m.est / spanDays(m.est))} a day plus buffer` }, cs, `⇉ ${spanDays(m.est)} days`);
   if (m.recur) h("span", { class: "pln-chip", title: "Repeating task" }, cs, "🔁");
   if (m.due) { const dd = daysUntil(m.due); h("span", { class: `pln-chip${dd < 0 ? " is-due" : dd <= 2 ? " is-soon" : ""}` }, cs, dd < 0 ? "overdue" : dd === 0 ? "due today" : `due ${dd}d`); }
   it.addEventListener("click", () => { if (suppressClick) return; picked = picked === r.key ? null : r.key; render(); });
@@ -1412,9 +1414,9 @@ function weekView(box, hd) {
     : "Drag a next step onto a day and an hour (on a phone: press and hold, or tap it and then tap an hour). A day's tasks without a time wait in the row under its date; drag them into the hours. Drag a block to another day or hour, its bottom edge to change its length, onto a day's row to take its time off, or back to the list. Tap a date to open that day. Drag across empty hours, over several days if you like, to select a range and see what is in it.");
 
   // the answer first: how full these days are, and which day is over
-  const loads = days.map(d => ({ d, m: withBuffer(minutes(tasksOn(d).filter(r => !meta(r.raw).done)).total) }));
-  const total = loads.reduce((t, x) => t + x.m, 0), over = loads.filter(x => x.m > capMin(x.d));
-  h("p", { class: "pln-answer" }, box, `${fmtEst(total)} planned of ${fmtEst(days.reduce((t, d) => t + capMin(d), 0))} ${IDEAL_ON ? "of task time in your Ideal Week" : ""} on these ${n} days.${over.length ? ` Over: ${over.map(x => `${short(x.d)} by ${fmtEst(x.m - capMin(x.d))}`).join(", ")}.` : " Every day fits."}`.replace("  on", " on"));
+  const loads = days.map(d => { const own = minutes(tasksOn(d).filter(r => !meta(r.raw).done)).total; return { d, own, m: withBuffer(own) }; });
+  const total = loads.reduce((t, x) => t + x.own, 0), over = loads.filter(x => x.m > capMin(x.d));
+  h("p", { class: "pln-answer" }, box, `${plusBuffer(total)} planned of ${fmtEst(days.reduce((t, d) => t + capMin(d), 0))} ${IDEAL_ON ? "of task time in your Ideal Week" : ""} on these ${n} days.${over.length ? ` Over: ${over.map(x => `${short(x.d)} by ${fmtEst(x.m - capMin(x.d))}`).join(", ")}.` : " Every day fits."}`.replace("  on", " on"));
   selPanel(box, "above");
   const wrap = h("div", { class: `pln-wkw${stacked ? " is-narrow" : ""}` }, box);
   const poolEl = h("div", { class: "pln-pool" }, wrap);
@@ -1429,12 +1431,12 @@ function weekView(box, hd) {
   for (const day of days) {
     const cap = capMin(day);
     const open = tasksOn(day).filter(r => !meta(r.raw).done);
-    const planned = withBuffer(minutes(open).total);
+    const own = minutes(open).total, planned = withBuffer(own);
     const dh = h("div", { class: `pln-cal-dh${day === TODAY ? " is-today" : ""}${day < TODAY ? " is-past" : ""}`, title: "Open this day in the day view" }, head);
     h("div", {}, dh, day === TODAY ? `Today ${short(day).split(" ")[1]}` : short(day));
     const capEl = h("div", { class: `pln-cap${planned > cap ? (day > TODAY ? " is-full" : " is-over") : planned > cap * 0.85 ? " is-full" : ""}`, title: "Planned time with buffer, against your hours per day" }, dh);
     h("div", { style: `width:${cap ? Math.min(100, (100 * planned) / cap) : 0}%` }, capEl);
-    h("div", { class: "pln-sub" }, dh, `${fmtEst(planned)} of ${fmtEst(cap)}`);
+    h("div", { class: "pln-sub" }, dh, `${plusBuffer(own)} of ${fmtEst(cap)}`);
     dh.addEventListener("click", () => { tlDay = day; state.tlMode = "day"; save(); render(); });
     const lane = h("div", { class: "pln-day pln-lane", "data-day": day }, lanes);
     birthdayMarks(lane, day);
