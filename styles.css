@@ -1841,3 +1841,10 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 .ex3c-tf-add { display: flex; gap: 6px; margin-top: 6px; }
 .ex3c-tf-add input { flex: 1 1 8em; min-width: 0; }
 @media (max-width: 499px) { .ex3c-tf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 6px; } .ex3c-tf-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .ex3c-tf-add { flex-wrap: wrap; } }
+
+/* phones: floating quick capture button (28-10-2026) */
+.life-os-fab-dock { position: sticky; bottom: 0; height: 0; z-index: 20; pointer-events: none; }
+.life-os-fab { position: absolute; right: 16px; bottom: calc(24px + var(--safe-area-inset-bottom, 0px)); width: 52px; height: 52px; min-height: 52px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--life-os-accent, var(--interactive-accent)); color: var(--text-on-accent); box-shadow: var(--shadow-l); pointer-events: auto; border: none; }
+body:not(.is-mobile) .life-os-fab { bottom: 40px; } /* above the desktop status bar in a narrow window */
+.life-os-fab svg { width: 26px; height: 26px; }
+.life-os-quick-capture-modal .life-os-quick-capture-more { margin-top: 10px; font-size: var(--font-ui-small); }

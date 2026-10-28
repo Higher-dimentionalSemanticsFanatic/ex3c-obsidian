@@ -17,6 +17,10 @@ const notify = m => (obs.Notice ? new obs.Notice(m) : console.warn(m));
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 const dmy = s => (s ? moment(String(s)).format("DD-MM-YYYY") : "");
 const UI = (window.__ex3cProjectBoard ??= { undo: null });
+const parseEst = s => { const v = String(s ?? "").trim().toLowerCase().replace(",", "."); if (!v) return null; if (/^\d+(\.\d+)?$/.test(v)) return parseFloat(v); let m = 0, hit = false; for (const x of v.matchAll(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)(?![a-z])/g)) { hit = true; m += parseFloat(x[1]) * (x[2].startsWith("h") ? 60 : 1); } return hit ? m : null; };
+const fmtEst = min => { const h = Math.floor(min / 60), m = Math.round(min - h * 60); return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ") || "0m"; };
+const money = n => n.toLocaleString(undefined, { style: "currency", currency: "EUR" });
+const OPEN_IDS = new Set(dv.pages().file.tasks.where(t => !t.completed && t.status !== "-").array().map(t => t.text.match(/🆔 ([\w-]+)/u)?.[1]).filter(Boolean));
 const statusOf = p => String(p.status ?? "").toLowerCase().trim();
 const colOf = p => (COLS.find(c => c.match.includes(statusOf(p))) ?? COLS[1]).id;
 function projects() {
@@ -82,7 +86,7 @@ root.createEl("style", { text: `
 .pjb-head button { margin-left: auto; font-size: 11px; padding: 1px 8px; height: auto; }
 .pjb-card { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; cursor: grab; font-size: 12px; }
 .pjb-card strong { display: block; font-size: 13px; cursor: pointer; } .pjb-card strong:hover { color: var(--text-accent); }
-.pjb-sub { color: var(--text-muted); } .pjb-next { margin-top: 3px; }
+.pjb-sub { color: var(--text-muted); } .pjb-roll { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; } .pjb-next { margin-top: 3px; }
 .pjb-bar { height: 4px; border-radius: 2px; background: var(--background-modifier-border); overflow: hidden; margin: 4px 0; } .pjb-bar > div { height: 100%; background: var(--interactive-accent); }
 .pjb-card select { font-size: 11px; height: auto; padding: 0 4px; margin-top: 4px; }
 .pjb-chip { font-size: 10px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--background-modifier-border); margin-left: 4px; }
@@ -114,10 +118,18 @@ function render() {
       const card = el.createEl("div", { cls: "pjb-card", attr: { draggable: "true" } });
       card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/x-ex3c-project", p.file.path); e.dataTransfer.effectAllowed = "move"; });
       const t = card.createEl("strong", { text: p.file.name }); t.addEventListener("click", () => app.workspace.openLinkText(p.file.path, "", false));
-      const sub = card.createEl("div", { cls: "pjb-sub", text: ts.length ? `${open.length} open · ${done.length} done` : "No tasks yet" });
+      // roll-up (computed, never written): steps done, estimated time and money still open, blocked steps
+      const leaf = t => !(t.children ?? []).some(c => c.task), steps = ts.filter(leaf), openSteps = steps.filter(t => !t.completed && t.status !== "-");
+      const f = (t, k) => t.text.match(new RegExp(`\\[${k}::\\s*([^\\]]*)\\]`))?.[1]?.trim();
+      const left = openSteps.reduce((m, t) => m + (parseEst(f(t, "est")) ?? 0), 0), noEst = openSteps.filter(t => parseEst(f(t, "est")) === null).length;
+      const cost = openSteps.reduce((c, t) => { const p = Number(f(t, "price")); return isNaN(p) || f(t, "price") === undefined ? c : c + p * (Number(f(t, "qty")) || 1); }, 0);
+      const blocked = openSteps.filter(t => (t.text.match(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u)?.[1] ?? "").split(/\s*,\s*/).some(id => id && OPEN_IDS.has(id))).length;
+      const sub = card.createEl("div", { cls: "pjb-sub", text: steps.length ? `${steps.length - openSteps.length} of ${steps.length} done` : "No tasks yet" });
+      const roll = [left ? `${fmtEst(left)} left` : "", cost ? `${money(cost)} to buy` : "", blocked ? `⛔ ${blocked} blocked` : ""].filter(Boolean);
+      const rollEl = roll.length ? card.createEl("div", { cls: "pjb-roll", text: roll.join(" · "), attr: { title: `Computed from the open steps, never written into the note. Time left: their [est::]${noEst ? ` (${noEst} without an estimate are not counted)` : ""}. To buy: price × qty. Blocked: waiting for an open ⛔ task.` } }) : null;
       if (p.area && !AREA) sub.createEl("span", { cls: "pjb-chip", text: String(p.area) });
       if (p.due) sub.appendText(` · due ${dmy(p.due)}`);
-      if (ts.length) card.createEl("div", { cls: "pjb-bar" }).createEl("div", { attr: { style: `width:${100 * done.length / ts.length}%` } });
+      if (steps.length) card.createEl("div", { cls: "pjb-bar" }).createEl("div", { attr: { style: `width:${100 * (steps.length - openSteps.length) / steps.length}%` } });
       const next = p.file.tasks.array().find(t => !t.completed && t.status !== "-" && !(t.children ?? []).some(c => !c.completed));
       if (next && col.id === "active") card.createEl("div", { cls: "pjb-next", text: `Next: ${next.text.replace(/\s*[⏳📅🛫➕✅]\s*\d{4}-\d{2}-\d{2}/gu, "").replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/\s*(?:🆔|⛔)\s*[\w-]+(?:\s*,\s*[\w-]+)*/gu, "").replace(/\s*#project\/\S+/g, "").replace(/[🔺⏫🔼🔽⏬]/gu, "").replace(/\s+/g, " ").trim().replace(/^(.{90}).+$/, "$1…")}` });
       // picking a status works on phones too, where cards cannot be dragged

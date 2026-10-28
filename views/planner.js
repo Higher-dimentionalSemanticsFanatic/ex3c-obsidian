@@ -400,6 +400,8 @@ h("style", {}, root, `
 .pln-table { width: 100%; border-collapse: collapse; }
 .pln-table td { padding: 3px 4px; border-top: 1px solid var(--background-modifier-border); vertical-align: top; font-size: 12px; }
 .pln-table tr.is-suggested td { background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
+.pln-weektotal { margin: 4px 2px 10px; font-weight: 600; }
+.pln-table tr.pln-total td { color: var(--text-muted); font-size: 11px; font-weight: 600; border-top: 1px dashed var(--background-modifier-border); }
 .pln-table .pln-acts { display: inline-flex; vertical-align: middle; } /* the ✎ sits after the plan buttons, not on a line of its own */
 /* a narrow card (a phone): each task wraps onto two lines, text first, the plan buttons under it, instead of widening the page */
 @container (max-width: 520px) {
@@ -601,7 +603,7 @@ function taskMenu(ev, r) {
 }
 const menuOn = (el, r) => el.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); if (!drag) taskMenu(ev, r); }); // during a drag the press is the drag's
 
-function chips(parent, r, m, { showSched = false } = {}) {
+function chips(parent, r, m, { showSched = false, noBlocked = false } = {}) {
   if (m.start !== null) h("span", { class: "pln-chip is-time", title: "Time block (set in Day Planner or by Put on the timeline)" }, parent, `${clock(m.start)} - ${clock(m.end)}`);
   if (m.event) { h("span", { class: "pln-chip", title: "Calendar event" }, parent, "event"); return; }
   const est = m.est;
@@ -617,6 +619,8 @@ function chips(parent, r, m, { showSched = false } = {}) {
   if (m.pri < 3) h("span", { class: "pln-chip", title: "Priority" }, parent, PRI_LABEL[m.pri]);
   if (m.shops.length) h("span", { class: "pln-chip", title: `Bought on one trip with the other tasks for ${m.shops.join(" or ")} (the [shop::] field)` }, parent, `🛒 ${m.shops.join(" / ")}`);
   if (showSched && m.sched) h("span", { class: "pln-chip" }, parent, dayLabel(m.sched));
+  // planned or not, a step whose ⛔ blocker is still open says so
+  if (!noBlocked && !m.done && r && blockers(r).length) h("span", { class: "pln-chip is-due", title: `Blocked: waits for ${blockers(r).map(b => label(b.raw)).join(", ")} (⛔)` }, parent, "⛔ blocked");
 }
 // Work in a list of tasks; a task spread over days counts its share for one day.
 function minutes(list) {
@@ -844,6 +848,13 @@ function render() {
     }
     projectDueMarks(col, date);
   }
+  // the week's total row: tasks, time against the week's hours, money to spend
+  const wdays = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
+  const wopen = wdays.flatMap(d => tasksOn(d).filter(r => !meta(r.raw).done && !meta(r.raw).event).map(r => ({ r, d })));
+  const wmin = wdays.reduce((t, d) => t + dayLoad(d).all, 0), wcap = wdays.reduce((t, d) => t + capMin(d), 0);
+  const wcost = [...new Set(wopen.map(x => x.r))].reduce((c, r) => c + (meta(r.raw).cost ?? 0), 0);
+  h("div", { class: "pln-sub pln-weektotal", title: "Open tasks planned on these seven days, with the buffer, against the hours of these days" }, root,
+    `Week total: ${new Set(wopen.map(x => x.r)).size} open task${new Set(wopen.map(x => x.r)).size === 1 ? "" : "s"} · ${plusBuffer(wmin)} of ${fmtEst(wcap)}${wcost ? ` · ${wcost.toLocaleString(undefined, { style: "currency", currency: "EUR" })} to spend` : ""}`);
   }
 
   // timeline: one day as hours, with a pool of tasks to drag (or tap, then tap an hour) onto it
@@ -865,7 +876,18 @@ function render() {
   if (!list.length) h("p", { class: "pln-sub" }, pl, "No unplanned next steps.");
   const table = h("table", { class: "pln-table" }, pl);
   const days = Array.from({ length: 7 }, (_, i) => iso(addDays(TODAY_D, i)));
+  // total rows (idea from Operon's table summaries): one under each project when sorted by project, one for the list
+  const totalRow = (rs, title) => {
+    const mm = minutes(rs), cost = rs.reduce((c, r) => c + (meta(r.raw).cost ?? 0), 0);
+    const tr = h("tr", { class: "pln-total" }, table);
+    h("td", {}, tr);
+    h("td", { colspan: "3" }, tr, `${title}: ${rs.length} step${rs.length === 1 ? "" : "s"} · ${plusBuffer(mm.total)}${mm.missing ? ` (${mm.missing} counted at ~${GUESS}m)` : ""}${cost ? ` · ${cost.toLocaleString(undefined, { style: "currency", currency: "EUR" })}` : ""}`);
+  };
+  let block = [];
+  const flush = () => { if (state.sort === "project" && block.length > 1) totalRow(block, `${block[0].project} total`); block = []; };
   for (const r of list) {
+    if (block.length && block[0].project !== r.project) flush();
+    block.push(r);
     const m = meta(r.raw);
     const tr = h("tr", { class: suggestion?.keys.includes(r.key) ? "is-suggested" : "" }, table);
     const c0 = h("td", {}, tr);
@@ -888,6 +910,8 @@ function render() {
     h("span", {}, pe, "✎").addEventListener("click", () => edit(r));
     menuOn(tr, r);
   }
+  flush();
+  if (list.length > 1) totalRow(list, "All");
 
   // later steps: open steps that are not next yet, with what they wait for, so nothing in a project is invisible
   const later = ALL.filter(r => { const m = meta(r.raw); return !r.isNext && !m.done && !m.sched && !m.event && !r.kids.some(k => !meta(k.raw).done); });
@@ -895,15 +919,23 @@ function render() {
     const det = h("details", { style: "margin-top:8px" }, pl);
     if (UI.laterOpen) det.open = true;
     det.addEventListener("toggle", () => { UI.laterOpen = det.open; });
-    h("summary", { class: "pln-sub", style: "cursor:pointer" }, det, `Later steps (${later.length}): waiting for an earlier step or a ⛔`);
+    const nBlocked = later.filter(r => blockers(r).length).length;
+    h("summary", { class: "pln-sub", style: "cursor:pointer" }, det, `Later steps (${later.length}): ${later.length - nBlocked} waiting for an earlier step, ${nBlocked} blocked by a ⛔`);
+    // available vs blocked: a filter, so the ⛔ ones can be looked at on their own (or hidden)
+    const lf = h("div", { class: "pln-bar", style: "margin:4px 0" }, det);
+    for (const [v, t] of [["all", `All (${later.length})`], ["order", `Waiting in order (${later.length - nBlocked})`], ["blocked", `Blocked ⛔ (${nBlocked})`]]) {
+      const b = h("button", { class: `pln-btn${(UI.laterFilter ?? "all") === v ? " mod-cta" : ""}` }, lf, t);
+      b.addEventListener("click", () => { UI.laterFilter = v; render(); });
+    }
     const lt = h("table", { class: "pln-table" }, det);
-    for (const r of suggestedOrder(later)) {
+    const lfv = UI.laterFilter ?? "all";
+    for (const r of suggestedOrder(later).filter(r => lfv === "all" || (lfv === "blocked") === blockers(r).length > 0)) {
       const m = meta(r.raw), tr = h("tr", {}, lt); menuOn(tr, r);
       const c1 = h("td", { class: "pln-c-text" }, tr);
       const tx = h("span", { style: "cursor:pointer;color:var(--text-muted)" }, c1, label(r.raw));
       tx.addEventListener("click", () => openAt(r));
       h("div", { class: "pln-sub" }, c1, `${r.project} · ${blockers(r).length ? `blocked by ⛔ ${blockers(r).map(b => label(b.raw)).join(", ")}` : r.after ? `after: ${r.after}` : "waiting"}`);
-      const c2 = h("td", {}, tr); chips(c2, r, m);
+      const c2 = h("td", {}, tr); chips(c2, r, m, { noBlocked: true });
       const c3 = h("td", { class: "pln-c-act", style: "white-space:nowrap;text-align:right" }, tr);
       const b = h("button", { class: "pln-btn", title: "Plan it anyway" }, c3, "Today"); b.addEventListener("click", () => schedule(r, TODAY));
       const b2 = h("button", { class: "pln-btn", style: "margin-left:3px" }, c3, "Tomorrow"); b2.addEventListener("click", () => schedule(r, TOMORROW));

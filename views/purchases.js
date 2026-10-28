@@ -22,7 +22,7 @@ const isDoneLine = s => /^\s*[-*+] \[[xX-]\]/.test(s);
 const parseFields = s => { const f = {}; for (const m of s.matchAll(/\[([\w-]+)::\s*([^\]]*)\]/g)) f[m[1]] = m[2].trim(); return f; };
 const num = v => (v === undefined || v === "" || isNaN(Number(v)) ? undefined : Number(v));
 function shopsOf(raw) { return [...raw.matchAll(/\[shop::\s*([^\]]*)\]/g)].flatMap(m => m[1].split(",")).map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean); }
-const clean = s => strip(s).replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/#project\/\S+/g, "").replace(/\s+/g, " ").trim();
+const clean = s => strip(s).replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/\s*(🆔|⛔) [\w-]+(?:\s*,\s*[\w-]+)*/gu, "").replace(/#project\/\S+/g, "").replace(/\s+/g, " ").trim();
 // r = { path, line, raw } where raw is the full task line as last seen.
 function findLine(lines, r) {
   const key = strip(r.raw);
@@ -131,6 +131,22 @@ function controls() {
   sel("Group by", "group", [["shop", "Shop"], ["project", "Project"], ["none", "Nothing"]]);
 }
 
+// A total row under a group (idea from Operon's table summaries): items, quantity, money and, when the tasks
+// have [est::], the time they take, each under its own column.
+function footer(body, cols, es, title) {
+  const open = es.filter(e => !e.i.done), qty = open.reduce((s, e) => s + e.i.qty, 0);
+  const total = open.reduce((s, e) => s + e.i.total, 0), mins = open.reduce((s, e) => s + (parseEst(e.i.fields.est) ?? 0), 0);
+  const unpriced = open.filter(e => !e.i.priced).length;
+  const tr = body.createEl("tr", { cls: "pur-total", attr: { style: "border-top:1px solid var(--background-modifier-border);color:var(--text-muted);font-size:var(--font-smaller)" } });
+  tr.createEl("td");
+  tr.createEl("td", { text: `${title}: ${open.length} item${open.length === 1 ? "" : "s"}${unpriced ? ` · ${unpriced} without a price` : ""}` });
+  tr.createEl("td", { text: String(qty) });
+  tr.createEl("td");
+  tr.createEl("td", { text: money(total), attr: { style: "font-weight:600;color:var(--text-normal)" } });
+  for (let i = 5; i < cols.length; i++) tr.createEl("td", { text: cols[i] === "est" && mins ? fmtEst(mins) : "" });
+}
+const fmtEst = min => { const h = Math.floor(min / 60), m = Math.round(min - h * 60); return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ") || "0m"; };
+
 function draw() {
   out.empty();
   const ex = extras();
@@ -159,6 +175,7 @@ function draw() {
       const open = es.filter(e => !e.i.done).length;
       body.createEl("tr").createEl("td", { text: `${g}  ·  ${open} item${open === 1 ? "" : "s"}  ·  ${money(sum(es))}`, attr: { colspan: cols.length, style: "font-weight:600;padding-top:0.8em" } });
     }
+    const groupRows = es;
     for (const { r, i, here } of es) {
       const tr = body.createEl("tr", { attr: { style: i.done ? "color:var(--text-faint);text-decoration:line-through" : "" } });
       const cb = tr.createEl("td").createEl("input", { type: "checkbox", cls: "task-list-item-checkbox" });
@@ -189,7 +206,9 @@ function draw() {
       for (const k of ex) tr.createEl("td", { text: i.fields[k] ?? "" });
       iconButton(tr.createEl("td"), "pencil", "Edit task", async () => { if (await writeTask(r, "edit")) { controls(); draw(); } });
     }
+    if (g && groupRows.length > 1) footer(body, cols, groupRows, `${g} total`);
   }
+  if (state.group === "none" && list.length > 1) footer(body, cols, list, "Total");
   const open = list.filter(e => !e.i.done), noPrice = open.filter(e => !e.i.priced).length, multi = open.filter(e => e.i.shops.length > 1).length;
   out.createEl("p", { text: `${open.length} items, ${money(sum(list))} in total${noPrice ? ` (${noPrice} without a price)` : ""}.${state.group === "shop" && multi ? ` ${multi} can be bought at more than one shop: they are listed under each and counted once here.` : ""}`, attr: { style: "font-weight:600" } });
 }

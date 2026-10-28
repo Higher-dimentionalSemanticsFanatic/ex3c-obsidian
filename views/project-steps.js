@@ -37,7 +37,7 @@ const parseFields = s => { const f = {}; for (const m of s.matchAll(/\[([\w-]+):
 // [with:: previous] on a step: it runs side by side with the step above it instead of after it.
 const withPrev = r => /\[with::\s*previous\s*\]/i.test(r.raw);
 const num = v => (v === undefined || v === "" || isNaN(Number(v)) ? undefined : Number(v));
-const clean = s => strip(s).replace(/^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s+/, "").replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/\s*(📅|⏳|🛫|➕|✅|❌) \d{4}-\d{2}-\d{2}/gu, "").replace(/\s*🔁[^📅⏳🛫➕✅❌🔺⏫🔼🔽⏬#^]*/u, "").replace(/[🔺⏫🔼🔽⏬]/gu, "").replace(/#[\w/-]+/g, "").replace(/\s+/g, " ").trim();
+const clean = s => strip(s).replace(/^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s+/, "").replace(/\[[\w-]+::[^\]]*\]/g, "").replace(/\s*(📅|⏳|🛫|➕|✅|❌) \d{4}-\d{2}-\d{2}/gu, "").replace(/\s*🔁[^📅⏳🛫➕✅❌🔺⏫🔼🔽⏬#^]*/u, "").replace(/[🔺⏫🔼🔽⏬]/gu, "").replace(/\s*(🆔|⛔) [\w-]+(?:\s*,\s*[\w-]+)*/gu, "").replace(/#[\w/-]+/g, "").replace(/\s+/g, " ").trim();
 // r = { path, line, raw } where raw is the full task line as last seen.
 function findLine(lines, r) {
   const key = strip(r.raw);
@@ -88,12 +88,22 @@ function iconButton(parent, icon, label, onClick) {
 }
 // ---- end shared ----
 
+// ⛔ waits for the open task with that 🆔, anywhere in the vault (as in the Tasks plugin and the planner).
+// A step whose blocker is still open shows a ⛔ badge; "available" means nothing it waits for is open.
+const OPEN_IDS = new Map();
+for (const t of dv.pages().where(p => !["Templates/", ".trash/", "scripts/", "wiki/"].some(e => p.file.path.startsWith(e))).file.tasks.where(t => !t.completed && t.status !== "-").array()) {
+  const id = t.text.match(/🆔 ([\w-]+)/u)?.[1];
+  if (id) OPEN_IDS.set(id, clean(`- [ ] ${t.text}`));
+}
+const waitsFor = r => (isDoneLine(r.raw) ? [] : (r.raw.match(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u)?.[1] ?? "").split(/\s*,\s*/).filter(id => id && OPEN_IDS.has(id)).map(id => OPEN_IDS.get(id)));
+const costOf = r => { const f = parseFields(r.raw), p = num(f.price); return p === undefined ? 0 : p * (num(f.qty) ?? 1); };
+
 // ctr is shared with the children of plain (non-task) bullets, so numbering carries on through them
 function walk(items, prefix, depth, out, parent, ctr = { n: 0 }) {
   for (const it of items) {
     if (!it.task) { walk(it.children ?? [], prefix, depth, out, parent, ctr); continue; }
     const n = ++ctr.n;
-    const r = { path: it.path, line: it.line, raw: `${"\t".repeat(depth)}- [${it.status}] ${it.text}`, num: prefix ? `${prefix}.${n}` : `${n}`, depth, kids: [] };
+    const r = { path: it.path, line: it.line, raw: `${"\t".repeat(depth)}- [${it.status}] ${it.text}`, num: prefix ? `${prefix}.${n}` : `${n}`, depth, kids: [], up: parent };
     out.push(r);
     if (parent) parent.kids.push(r);
     walk(it.children ?? [], r.num, depth + 1, out, r);
@@ -168,6 +178,9 @@ function project(path, host = dv.container) {
       const mins = r.kids.length ? left(r) : own(r);
       if (mins) right.createEl("span", { text: r.kids.length ? `${fmtEst(mins)} left` : fmtEst(mins), attr: { title: r.kids.length ? "Estimated time still open in this step" : "Estimate", style: `color:var(--text-muted);font-size:0.85em;white-space:nowrap;${r.kids.length ? "font-style:italic;" : ""}` } });
       if (price !== undefined) right.createEl("span", { text: qty !== 1 ? `${qty} × ${money(price)}` : money(price), attr: { style: "color:var(--text-muted);font-size:0.85em;white-space:nowrap" } });
+      const wf = waitsFor(r);
+      if (wf.length) right.createEl("span", { text: "⛔ blocked", attr: { title: `Waits for: ${wf.join(", ")}`, style: "font-size:0.75em;padding:0 6px;border-radius:8px;border:1px solid var(--color-red);color:var(--color-red);white-space:nowrap" } });
+      if (r.kids.length && !d) { const ls = r.kids.flatMap(function lv(k) { return k.kids.length ? k.kids.flatMap(lv) : [k]; }), c = ls.filter(k => !done(k)).reduce((t, k) => t + costOf(k), 0); right.createEl("span", { text: `${ls.filter(done).length} of ${ls.length}${c ? ` · ${money(c)} to buy` : ""}`, attr: { title: "Sub-steps done, and what is still to buy under this step", style: "color:var(--text-muted);font-size:0.85em;white-space:nowrap" } }); }
       if (isNext) right.createEl("span", { text: "next", attr: { style: "font-size:0.75em;padding:0 6px;border-radius:8px;background:var(--interactive-accent);color:var(--text-on-accent)" } });
       iconButton(right, "pencil", "Edit task", async () => { if (await writeTask(r, "edit")) draw(); });
     }
@@ -239,7 +252,9 @@ function prep(rows) {
     r.nLeaves = ls.length; r.nDone = ls.filter(l => l.done).length;
     r.estAll = ls.reduce((s, l) => s + l.estUsed, 0); r.estDone = ls.filter(l => l.done).reduce((s, l) => s + l.estUsed, 0);
     r.lastDone = ls.map(l => l.doneOn).filter(Boolean).sort().pop() ?? r.doneOn;
+    r.costLeft = ls.filter(l => !l.done).reduce((t, l) => t + costOf(l), 0);
   }
+  for (const r of rows) r.blockedBy = r.kids.length ? [] : waitsFor(r);
 }
 const foldKey = (path, r) => `${path}#${clean(r.raw)}`;
 // a parent that is done with everything under it folds by itself; ▾/▸ overrides that
@@ -257,7 +272,7 @@ const projectDue = path => { const v = dv.page(path)?.due; const s = v?.toISODat
 function rowMeta(r, path) {
   if (r.kids.length) {
     if (r.settled) return `✓ ${r.lastDone ? shortDate(r.lastDone) : "done"} · ${r.nLeaves} step${r.nLeaves === 1 ? "" : "s"}`;
-    return `${r.nDone} of ${r.nLeaves}${r.estAll ? ` · ${fmtEst(r.estDone)} of ${fmtEst(r.estAll)}` : ""}`;
+    return `${r.nDone} of ${r.nLeaves}${r.estAll ? ` · ${fmtEst(r.estDone)} of ${fmtEst(r.estAll)}` : ""}${r.costLeft ? ` · ${money(r.costLeft)}` : ""}`;
   }
   if (r.done) return [r.est ? fmtEst(r.est) : "", r.took ? `took ${fmtEst(r.took)}` : r.doneOn ? `✓ ${shortDate(r.doneOn)}` : r.cancel ? "cancelled" : "✓"].filter(Boolean).join(" · ");
   return r.est ? fmtEst(r.est) : `~${fmtEst(DEFAULT_EST)}`;
@@ -275,6 +290,7 @@ function labelRow(labels, r, i, path, ROW, opts = {}) {
   const t = lab.createEl("span", { text: clean(r.raw), cls: "pg-text" });
   t.title = clean(r.raw);
   t.addEventListener("click", () => app.workspace.openLinkText(path, "", false, { eState: { line: r.line } }));
+  if (r.blockedBy?.length) lab.createEl("span", { cls: "pg-blocked", text: "⛔", attr: { title: `Blocked: waits for ${r.blockedBy.join(", ")}` } });
   lab.createEl("span", { cls: "pg-meta", text: rowMeta(r, path) });
   return lab;
 }
@@ -350,6 +366,7 @@ function charts(path, host) {
     rows = rows.filter(r => clean(r.raw) || r.kids.length); // skip empty "- [ ]" lines
     if (!rows.length || /^done$/i.test(heading) && rows.every(r => isDoneLine(r.raw))) continue;
     any = true;
+    for (const r of rows) r.chart = rows;
     prep(rows);
     if (timeModeOf(path) === "sequence") seqGantt(host, path, heading, rows, groups.size > 1);
     else gantt(host, path, heading, rows, groups.size > 1);
@@ -403,14 +420,16 @@ function gantt(host, path, heading, rows, showHeading) {
     }
     if (r.noEst) { noEstimate(plot, r, top, x(r.s), path); return; }
     const late = r.e < TODAY, past = !late && pdue && r.e > pdue;
-    const bar = plot.createEl("div", { cls: `pg-bar${r.inferred ? " is-inferred" : ""}${late ? " is-late" : ""}${past ? " is-pastdue" : ""}`,
+    const bar = plot.createEl("div", { cls: `pg-bar${r.inferred ? " is-inferred" : ""}${late ? " is-late" : ""}${past ? " is-pastdue" : ""}${r.blockedBy?.length ? " is-blocked" : ""}`,
       attr: { "data-key": `${r.line}`, style: `top:${top + 5}px;left:${x(r.s)}px;width:${Math.max(PX, (diffDays(r.s, r.e) + 1) * PX)}px;height:16px` } });
-    bar.title = `${clean(r.raw)}\n${dmy(r.s)} to ${dmy(r.e)}${r.inferred ? " (not planned yet: placed in outline order from its estimate)" : ""}${late ? "\nOverdue" : ""}${past ? `\nEnds after the project deadline (${dmy(pdue)})` : ""}`;
+    bar.title = `${clean(r.raw)}\n${dmy(r.s)} to ${dmy(r.e)}${r.blockedBy?.length ? `\n⛔ Blocked: waits for ${r.blockedBy.join(", ")}` : ""}${r.inferred ? " (not planned yet: placed in outline order from its estimate)" : ""}${late ? "\nOverdue" : ""}${past ? `\nEnds after the project deadline (${dmy(pdue)})` : ""}`;
     if (r.due && r.due > r.e) plot.createEl("div", { cls: "pg-due", text: "⚑", attr: { style: `top:${top + 3}px;left:${x(r.due)}px`, title: `Due ${dmy(r.due)}` } });
     const grip = bar.createEl("div", { cls: "pg-grip", attr: { title: "Drag to change the end date" } });
+    linkHandle(bar, r, plot);
     dragBar(bar, r, "move", PX);
     dragBar(grip, r, "end", PX);
   });
+  depArrows(plot, vis, r => (r.s && !r.done && !r.noEst && !r.kids.length ? { x0: x(r.s), x1: x(r.e) + PX } : null), ROW);
   const sk = `${path}#${heading}`;
   requestAnimationFrame(() => { scroller.scrollLeft = KEEP.scroll[sk] ?? Math.max(0, x(TODAY) - 3 * PX * (ui.zoom === "day" ? 3 : 7)); });
   scroller.addEventListener("scroll", () => { KEEP.scroll[sk] = scroller.scrollLeft; });
@@ -488,17 +507,19 @@ function seqGantt(host, path, heading, rows, showHeading) {
     if (r.done) return; // done work is off the axis; the row says when (and how long it took)
     if (r.noEst) { noEstimate(plot, r, top, r.h0 * PXH, path); return; }
     const len = r.h1 - r.h0;
-    const bar = plot.createEl("div", { cls: `pg-bar${r.guess ? " is-inferred" : ""}`, attr: { style: `top:${top + 5}px;left:${r.h0 * PXH}px;width:${Math.max(6, len * PXH)}px;height:16px` } });
+    const bar = plot.createEl("div", { cls: `pg-bar${r.guess ? " is-inferred" : ""}${r.blockedBy?.length ? " is-blocked" : ""}`, attr: { "data-key": `${r.line}`, style: `top:${top + 5}px;left:${r.h0 * PXH}px;width:${Math.max(6, len * PXH)}px;height:16px` } });
     bar.title = `${clean(r.raw)}\n${r.guess ? `No estimate yet: counted as the default ${fmtEst(DEFAULT_EST)} (dashed)` : `Estimate ${fmtEst(len)}`}\nDrag the right edge to ${r.guess ? "set" : "change"} the estimate`;
     bar.title += r.prev ? "\nDrag left onto the start of the step above to run side by side; drag right to run after it. Drag up or down to move it." : "\nDrag up or down to move it.";
     const egrip = bar.createEl("div", { cls: "pg-grip", attr: { title: "Drag to change the estimate" } });
     dragEst(egrip, bar, r, PXH);
+    linkHandle(bar, r, plot);
     dragRow(bar, r, vis, labels, ROW, "bar", PXH);
   });
   const open = rows.filter(r => !r.kids.length && !r.done && !isRecur(r)), done = rows.filter(r => !r.kids.length && r.done && !isRecur(r));
   const pdue = projectDue(path);
   const left = open.reduce((s, r) => s + r.estUsed, 0), doneMin = done.reduce((s, r) => s + (r.est ?? r.took ?? 0), 0), noEst = open.filter(r => r.guess).length;
   box.createEl("div", { cls: "pg-legend", attr: { style: "padding:2px 8px 4px" }, text: `Done ${fmtEst(doneMin)} · left ${fmtEst(left)}, about ${Math.max(1, Math.ceil(left / dayMin))} work day${Math.ceil(left / dayMin) === 1 ? "" : "s"} at ${HOURS_PER_DAY}h a day${noEst ? `; ${noEst} step${noEst === 1 ? "" : "s"} without an estimate counted at the default ${fmtEst(DEFAULT_EST)} (dashed)` : ""}.${pdue ? ` Project due ${dmy(pdue)}: ${(n => n < 0 ? `${-n} days over` : `${n} day${n === 1 ? "" : "s"} left${Math.ceil(left / dayMin) > n ? ", fewer than the work days needed" : ""}`)(diffDays(TODAY, pdue))}.` : ""}` });
+  depArrows(plot, vis, r => (r.h0 !== undefined && !r.done && !r.noEst && !r.kids.length ? { x0: r.h0 * PXH, x1: r.h1 * PXH } : null), ROW);
   const sk = `seq:${path}#${heading}`;
   requestAnimationFrame(() => { scroller.scrollLeft = KEEP.scroll[sk] ?? 0; });
   scroller.addEventListener("scroll", () => { KEEP.scroll[sk] = scroller.scrollLeft; });
@@ -664,7 +685,8 @@ function dragBar(el, r, kind, PX) {
       // Dragging plans, it never moves a deadline: one day writes ⏳, several days 🛫 first day and ⏳ last day
       // (the planner's form for a task spread over days). 📅 stays as it was.
       void spread; void useSched;
-      if (await writeLine(r, line => (s === e2 ? setDate(setDate(line, "🛫", null), "⏳", s) : setDate(setDate(line, "🛫", s), "⏳", e2)))) redraw();
+      const own = line => (s === e2 ? setDate(setDate(line, "🛫", null), "⏳", s) : setDate(setDate(line, "🛫", s), "⏳", e2));
+      if (await moveWithChain(r, own, s, diffDays(r.e, e2), e2)) redraw(); else { bar.classList.remove("is-dragging"); bar.style.left = `${left0}px`; bar.style.width = `${w0}px`; }
     };
     const up = () => void end(true), cancel = () => void end(false);
     document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", cancel);
@@ -766,6 +788,156 @@ function dragGroup(el, r, PX) {
   });
 }
 
+// ---------- chains and links (ideas from Operon, 28-10-2026) ----------
+// Moving a step can carry the steps after it: its later siblings (the steps that follow it in the outline) and the
+// steps that wait for it (⛔ its 🆔), all by the same number of days. Only 🛫 and ⏳ shift; 📅 deadlines never move.
+// Undated steps follow by themselves. If the step now starts before a parent's own 🛫, the parent's 🛫 can widen to
+// fit. Everything asks first, and Undo above the chart puts it back.
+const idOf = r => r.raw.match(/🆔 ([\w-]+)/u)?.[1] ?? null;
+const depsOf = r => (r.raw.match(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u)?.[1] ?? "").split(/\s*,\s*/).filter(Boolean);
+const shiftPlan = (line, n) => ["🛫", "⏳"].reduce((l, e) => shiftDate(l, e, n), line);
+const hasPlanDate = r => /[🛫⏳] \d{4}-\d{2}-\d{2}/u.test(r.raw);
+function followers(r, n, { sib, dep }) {
+  const rows = r.chart ?? [], moved = new Set([r]), open = x => !isDoneLine(x.raw);
+  const add = x => { if (moved.has(x) || !open(x)) return false; moved.add(x); for (const k of descendants(x)) if (open(k)) moved.add(k); return true; };
+  const why = new Map();
+  if (sib) {
+    // later siblings of the step and of each of its parents: everything after it in the outline
+    for (let x = r; x; x = x.up) { const list = x.up ? x.up.kids : rows.filter(y => y.depth === 0); for (const y of list.slice(list.indexOf(x) + 1)) if (add(y)) why.set(y, "later step"); }
+  }
+  if (dep) {
+    let grew = true;
+    while (grew) {
+      grew = false;
+      const ids = new Set([...moved].map(idOf).filter(Boolean));
+      for (const y of rows) if (!moved.has(y) && open(y) && depsOf(y).some(id => ids.has(id))) { add(y); why.set(y, "waits for it (⛔)"); grew = true; }
+    }
+  }
+  moved.delete(r);
+  return { list: [...moved], why };
+}
+async function moveWithChain(r, ownFn, newStart, n, newEnd = null) {
+  const C = (ui.chain ??= { sib: true, dep: true, widen: true });
+  // a parent with its own 🛫 later than the step's new start can widen (idea 9; never touches 📅 or the project's due)
+  const widen = [];
+  for (let p = r.up; p; p = p.up) { const st = p.raw.match(/🛫 (\d{4}-\d{2}-\d{2})/u)?.[1]; if (st && newStart < st) widen.push(p); }
+  const fAll = n ? followers(r, n, { sib: true, dep: true }) : { list: [], why: new Map() };
+  const dated = fAll.list.filter(hasPlanDate);
+  if (!dated.length && !widen.length) return writeLine(r, ownFn);
+  const days = `${n > 0 ? "+" : ""}${n} day${Math.abs(n) === 1 ? "" : "s"}`;
+  const choice = await new Promise(resolve => {
+    const back = document.body.createEl("div", { cls: "pg-chain-back", attr: { style: "position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px" } });
+    const card = back.createEl("div", { attr: { style: "background:var(--background-primary);color:var(--text-normal);border:1px solid var(--background-modifier-border);border-radius:10px;max-width:560px;width:100%;padding:14px 16px;box-shadow:var(--shadow-l)" } });
+    card.createEl("div", { text: `Move "${clean(r.raw)}"${n ? ` ${days}` : ""}`, attr: { style: "font-weight:600;font-size:15px;margin-bottom:6px" } });
+    const st = { ...C };
+    const listEl = card.createEl("ul", { attr: { style: "max-height:40vh;overflow:auto;font-size:12px;margin:4px 0;padding-left:18px" } });
+    const box = (key, text, count) => { if (!count) return; const l = card.createEl("label", { attr: { style: "display:flex;gap:6px;align-items:center;font-size:13px;margin:4px 0" } }); const i = l.createEl("input", { type: "checkbox" }); i.checked = !!st[key]; l.appendText(text); i.addEventListener("change", () => { st[key] = i.checked; paint(); }); listEl.before(l); };
+    const nSib = followers(r, n, { sib: true, dep: false }).list.filter(hasPlanDate).length, nDep = followers(r, n, { sib: false, dep: true }).list.filter(hasPlanDate).length;
+    box("sib", ` Also move the later steps ${days} (${nSib} with dates)`, n && nSib);
+    box("dep", ` Also move the steps that wait for it, ⛔ (${nDep} with dates)`, n && nDep);
+    box("widen", ` Widen ${widen.length === 1 ? `"${clean(widen[0].raw)}"` : `${widen.length} parent steps`} to start ${dmy(newStart)} (🛫)`, widen.length);
+    const paint = () => {
+      listEl.empty();
+      listEl.createEl("li", { text: `${r.num} ${clean(r.raw)}: ${dmy(newStart)}${newEnd && newEnd !== newStart ? ` to ${dmy(newEnd)}` : ""} (this step)` });
+      const f = n ? followers(r, n, st) : { list: [], why: new Map() };
+      for (const y of f.list.filter(hasPlanDate)) { const d0 = y.raw.match(/[🛫⏳] (\d{4}-\d{2}-\d{2})/u)[1]; listEl.createEl("li", { text: `${y.num} ${clean(y.raw)}: ${dmy(d0)} to ${dmy(addDays(d0, n))} (${f.why.get(y) ?? "inside a later step"})` }); }
+      const und = f.list.filter(y => !hasPlanDate(y)).length;
+      if (und) listEl.createEl("li", { text: `${und} step${und === 1 ? "" : "s"} without dates follow along (nothing written)`, attr: { style: "color:var(--text-muted)" } });
+      if (st.widen) for (const p of widen) listEl.createEl("li", { text: `${p.num} ${clean(p.raw)}: start ${dmy(p.raw.match(/🛫 (\d{4}-\d{2}-\d{2})/u)[1])} to ${dmy(newStart)}` });
+    };
+    paint();
+    card.createEl("div", { text: "Only 🛫 and ⏳ change; 📅 deadlines stay. You can undo this with Undo above the chart.", attr: { style: "color:var(--text-muted);font-size:12px;margin:6px 0 10px" } });
+    const row = card.createEl("div", { attr: { style: "display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap" } });
+    const no = row.createEl("button", { text: "Cancel" }), only = row.createEl("button", { text: "Only this step" }), yes = row.createEl("button", { text: "Move", cls: "mod-cta" });
+    const done = v => { document.removeEventListener("keydown", key, true); back.remove(); resolve(v); };
+    const key = e => { if (e.key === "Escape") { e.stopPropagation(); done(null); } };
+    document.addEventListener("keydown", key, true);
+    no.addEventListener("click", () => done(null)); only.addEventListener("click", () => done({ sib: false, dep: false, widen: false })); yes.addEventListener("click", () => done(st));
+    back.addEventListener("click", e => { if (e.target === back) done(null); });
+    yes.focus();
+  });
+  if (!choice) return false;
+  Object.assign(C, choice); saveUi();
+  const plan = [{ x: r, fn: ownFn }];
+  if (n) for (const y of followers(r, n, choice).list.filter(hasPlanDate)) plan.push({ x: y, fn: line => shiftPlan(line, n) });
+  if (choice.widen) for (const p of widen) plan.push({ x: p, fn: line => setDate(line, "🛫", newStart) });
+  return applyPlan(r.path, plan, `Moved "${clean(r.raw)}"${plan.length > 1 ? ` and ${plan.length - 1} more` : ""}`);
+}
+// several line edits in one note, in one write, with the shared Undo
+async function applyPlan(path, plan, title) {
+  const f = app.vault.getAbstractFileByPath(path);
+  if (!f) return false;
+  const items = [];
+  await app.vault.process(f, data => {
+    const L = data.split("\n");
+    for (const { x, fn } of plan) { const j = findLine(L, x); if (j < 0) continue; const next = fn(L[j]); if (next === L[j]) continue; items.push({ path, before: L[j], after: next }); L[j] = next; }
+    return L.join("\n");
+  });
+  if (items.length < plan.length) notify(`${plan.length - items.length} task${plan.length - items.length === 1 ? "" : "s"} had changed in the note (or needed no change) and were left alone.`);
+  if (items.length) try { localStorage.setItem(UNDO_KEY, JSON.stringify({ title, at: Date.now(), items })); } catch (e) {}
+  return items.length > 0;
+}
+// Drag from the dot at a bar's right end onto another bar: that step now waits for this one (writes 🆔 here, ⛔ there).
+const newId = () => Math.random().toString(36).slice(2, 8).padEnd(6, "0");
+const addSign = (line, emoji, val) => { const m = line.match(/\s\^[\w-]+\s*$/); return m ? `${line.slice(0, m.index)} ${emoji} ${val}${line.slice(m.index)}` : `${line.trimEnd()} ${emoji} ${val}`; };
+function linkHandle(bar, r, plot) {
+  const dot = bar.createEl("div", { cls: "pg-link", attr: { title: "Drag onto another step: that step then waits for this one (⛔)" } });
+  dot.addEventListener("touchmove", ev => { if (dot._drag?.active) ev.preventDefault(); }, { passive: false });
+  dot.addEventListener("pointerdown", ev => {
+    if (ev.button > 0) return;
+    ev.stopPropagation(); ev.preventDefault();
+    const d = { x0: ev.clientX, y0: ev.clientY, active: false, touch: ev.pointerType === "touch" };
+    dot._drag = d;
+    const pr = plot.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    const sx = b.right - pr.left, sy = b.top + b.height / 2 - pr.top;
+    let line = null, over = null;
+    const begin = () => { d.active = true; line = plot.createEl("div", { cls: "pg-linkline" }); };
+    if (d.touch) d.timer = setTimeout(begin, 300); else begin();
+    const targetAt = e => { const el = document.elementsFromPoint(e.clientX, e.clientY).find(x => x.classList?.contains("pg-bar") && x !== bar && x.closest(".pg-plot") === plot); return el ? (r.chart ?? []).find(y => `${y.line}` === el.dataset.key) ?? null : null; };
+    const move = e => {
+      if (!d.active) { if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 8) end(null); return; }
+      const ex = e.clientX - pr.left, ey = e.clientY - pr.top, len = Math.hypot(ex - sx, ey - sy);
+      line.style.cssText = `left:${sx}px;top:${sy}px;width:${len}px;transform:rotate(${Math.atan2(ey - sy, ex - sx)}rad)`;
+      plot.querySelectorAll(".pg-bar.is-linktarget").forEach(x => x.classList.remove("is-linktarget"));
+      over = targetAt(e);
+      if (over) plot.querySelector(`.pg-bar[data-key="${CSS.escape(`${over.line}`)}"]`)?.classList.add("is-linktarget");
+    };
+    const end = async e => {
+      clearTimeout(d.timer); document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", cancel);
+      dot._drag = null; line?.remove(); plot.querySelectorAll(".pg-bar.is-linktarget").forEach(x => x.classList.remove("is-linktarget"));
+      if (!d.active || !e || !over || over === r) return;
+      const id = idOf(r) ?? newId();
+      if (depsOf(over).includes(id)) return notify("That step already waits for this one.");
+      if (idOf(over) && depsOf(r).includes(idOf(over))) return notify("This step already waits for that one; a step cannot wait for itself in a loop.");
+      const plan = [];
+      if (!idOf(r)) plan.push({ x: r, fn: l => addSign(l, "🆔", id) });
+      plan.push({ x: over, fn: l => (/⛔ [\w-]/u.test(l) ? l.replace(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u, (m, ids) => `⛔ ${ids},${id}`) : addSign(l, "⛔", id)) });
+      if (await applyPlan(r.path, plan, `Linked: "${clean(over.raw)}" waits for "${clean(r.raw)}"`)) { notify(`"${clean(over.raw)}" now waits for "${clean(r.raw)}". Undo is above the chart.`); redraw(); }
+    };
+    const up = e => void end(e), cancel = () => void end(null);
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", cancel);
+  });
+}
+// thin arrows from the end of a step to the start of each step that waits for it (same chart, both shown)
+function depArrows(plot, vis, span, ROW) {
+  const byId = new Map(); vis.forEach((r, i) => { const id = idOf(r); if (id) byId.set(id, i); });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "pg-deps"); plot.appendChild(svg);
+  vis.forEach((r, i) => {
+    const to = span(r); if (!to) return;
+    for (const id of depsOf(r)) {
+      const j = byId.get(id); if (j === undefined) continue;
+      const from = span(vis[j]); if (!from) continue;
+      const x1 = from.x1, y1 = 36 + j * ROW + 13, x2 = to.x0, y2 = 36 + i * ROW + 13, mx = Math.max(x1 + 6, Math.min(x2 - 6, x1 + 10));
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", `M${x1},${y1} H${mx} V${y2} H${x2 - 2}`);
+      p.setAttribute("class", x2 < x1 ? "is-conflict" : "");
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "title"); t.textContent = `${clean(r.raw)} waits for ${clean(vis[j].raw)}${x2 < x1 ? " (but starts before it ends)" : ""}`; p.appendChild(t);
+      svg.appendChild(p);
+    }
+  });
+}
+
 // ---------- page ----------
 let redraw = () => {};
 if (input?.allProjects && files.length) {
@@ -837,6 +1009,17 @@ if (input?.allProjects && files.length) {
 .pg-labels { position: relative; }
 .pg-drop { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--interactive-accent); z-index: 5; pointer-events: none; }
 .pg-with { position: absolute; font-size: 11px; color: var(--text-accent); z-index: 4; }
+.pg-blocked { color: var(--color-red); font-size: 11px; flex-shrink: 0; cursor: help; }
+.pg-bar.is-blocked { background-image: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--background-primary) 55%, transparent) 4px 7px); }
+.pg-sum { font-size: 12px; color: var(--text-muted); }
+.pg-link { position: absolute; right: -11px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: var(--background-primary); border: 2px solid var(--text-accent); cursor: crosshair; touch-action: none; opacity: 0; z-index: 5; }
+.pg-bar:hover .pg-link, .pg-link:active { opacity: 1; }
+@media (hover: none) { .pg-link { opacity: .8; } }
+.pg-linkline { position: absolute; height: 0; border-top: 2px dashed var(--text-accent); transform-origin: 0 0; z-index: 6; pointer-events: none; }
+.pg-bar.is-linktarget { box-shadow: 0 0 0 2px var(--text-accent); }
+.pg-deps { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: visible; }
+.pg-deps path { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: none; }
+.pg-deps path.is-conflict { stroke: var(--color-red); stroke-dasharray: 3 2; }
 .pg-legend { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 ` });
   const pick = root.createEl("div", { cls: "pg-pick" });
@@ -877,6 +1060,13 @@ if (input?.allProjects && files.length) {
       a.addEventListener("click", () => app.workspace.openLinkText(p, "", false));
       const pd = projectDue(p);
       if (pd) { const d = diffDays(TODAY, pd); head.createEl("span", { cls: `pg-pdue-chip${d < 0 ? " is-over" : ""}`, text: `⚑ due ${dmy(pd)} · ${d < 0 ? `${-d}d over` : d === 0 ? "today" : `${d}d left`}`, attr: { title: "The project note's due property" } }); }
+      { // roll-up for the whole project: computed from its steps, never written into a note
+        let rs = []; walk(dv.page(p)?.file.lists.where(l => l.parent === undefined || l.parent === null).array() ?? [], "", 0, rs, null);
+        rs = rs.filter(r => clean(r.raw) || r.kids.length); prep(rs);
+        const ls = rs.filter(r => !r.kids.length && !isRecur(r)), open = ls.filter(r => !r.done);
+        const est = open.reduce((t, r) => t + (r.est ?? 0), 0), noEst = open.filter(r => r.est === null).length, cost = open.reduce((t, r) => t + costOf(r), 0), blk = open.filter(r => r.blockedBy.length).length;
+        if (ls.length) head.createEl("span", { cls: "pg-sum", text: `${ls.length - open.length} of ${ls.length} done${est ? ` · ${fmtEst(est)} left` : ""}${noEst && est ? ` (+${noEst} without estimate)` : ""}${cost ? ` · ${money(cost)} to buy` : ""}${blk ? ` · ${blk} blocked` : ""}`, attr: { title: "Steps without sub-steps; repeats not counted. Time left is the open steps' [est::]; to buy is their price × qty. Nothing here is written into the note." } });
+      }
       const view = ui.view[p] ?? "gantt";
       const seg2 = head.createEl("span", { cls: "pg-seg" });
       for (const [v, l] of [["gantt", "Gantt"], ["steps", "Steps"]]) {
@@ -895,7 +1085,7 @@ if (input?.allProjects && files.length) {
       else {
         charts(p, sec);
         if (timeModeOf(p) === "sequence") sec.createEl("div", { cls: "pg-legend", text: "Sequence: the hours of work still to do, in outline order (indent to nest, [mode:: parallel] side by side, ⛔ waits for a 🆔), each as long as its estimate. Done steps are off the axis (✓ with their date). [ ] bracket = a parent over its open steps, filled to the share done; ▸ folded. Drag a bar's right edge to change its estimate; drag a step (bar or ⋮⋮) up or down to move it; drag a bar left onto the start of the step above to run them side by side (∥, writes [with:: previous]). Bands are work days of " + HOURS_PER_DAY + "h. Switch to Calendar once you want dates." });
-        else sec.createEl("div", { cls: "pg-legend", text: `■ planned (🛫 ⏳ 📅) · dashed: not planned yet, placed in outline order at ${HOURS_PER_DAY}h a day plus ${BUFFER}% buffer · grey ✓: done, on its ✅ date · [ ] bracket: a parent over its open steps, filled to the share done · ▸ folded · red: overdue · ⚑ due date · red dashed line: the project's due date (orange outline: a step that ends after it). Dragging plans (⏳, or 🛫 and ⏳); it never moves a 📅 deadline. Each heading with tasks is its own chart.` });
+        else sec.createEl("div", { cls: "pg-legend", text: `■ planned (🛫 ⏳ 📅) · dashed: not planned yet, placed in outline order at ${HOURS_PER_DAY}h a day plus ${BUFFER}% buffer · grey ✓: done, on its ✅ date · [ ] bracket: a parent over its open steps, filled to the share done · ▸ folded · red: overdue · ⚑ due date · red dashed line: the project's due date (orange outline: a step that ends after it). Dragging plans (⏳, or 🛫 and ⏳); it never moves a 📅 deadline, and asks whether the later steps and the steps waiting for it (⛔) move along. Hatched with ⛔: waits for an open step; thin lines: what waits for what. Drag the dot at a bar's end onto another bar to make that one wait for it (🆔 and ⛔). Each heading with tasks is its own chart.` });
       }
     }
   };
