@@ -759,8 +759,6 @@ function render() {
     : IDEAL_ON ? `Hours per weekday from its #tasks blocks: ${DAYN.map((d, i) => `${d[0].toUpperCase()}${d.slice(1)} ${fmtEst(IDEAL.filter(b => b.tasks && b.days.includes(i)).reduce((t, b) => t + b.e - b.s, 0))}`).join(", ")}. `
     : "On, but the Ideal Week has no #tasks blocks yet, so Hours per day still applies. ");
   h("a", { style: "cursor:pointer" }, iw, "Open the Ideal Week").addEventListener("click", () => app.workspace.openLinkText(IDEAL_PATH, "", false));
-  iw.appendChild(document.createTextNode(" · "));
-  h("a", { style: "cursor:pointer", title: "Calendar links and .ics files: their events are fixed blocks here" }, iw, "Calendars").addEventListener("click", () => app.workspace.openLinkText("00 Dashboards/Calendars.md", "", false));
   }
   const prev = h("button", { class: "pln-btn" }, bar, "‹");
   const wk = h("button", { class: "pln-btn" }, bar, state.weekOffset === 0 ? "This week" : `Week ${state.weekOffset > 0 ? "+" : ""}${state.weekOffset}`);
@@ -770,6 +768,8 @@ function render() {
   wk.addEventListener("click", () => { state.weekOffset = 0; save(); render(); });
   // In the evening (less than half an hour left today) planning tomorrow is the main button.
   const late = todayBudget().left < 30;
+  const calB = h("button", { class: "pln-btn", title: "Calendar links and .ics files: their events are fixed blocks in the planner" }, bar, "📅 Calendars");
+  calB.addEventListener("click", () => app.workspace.openLinkText("00 Dashboards/Calendars.md", "", false));
   const sug = h("button", { class: `pln-btn${late ? "" : " mod-cta"}`, title: "Proposes next steps that fit in what is left of today" }, bar, "Suggest today");
   sug.addEventListener("click", () => suggestFor(TODAY));
   const sugT = h("button", { class: `pln-btn${late ? " mod-cta" : ""}`, title: "Plan tomorrow tonight: proposes next steps for your full hours tomorrow" }, bar, "Suggest tomorrow");
@@ -851,7 +851,7 @@ function render() {
   // the week's total row: tasks, time against the week's hours, money to spend
   const wdays = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
   const wopen = wdays.flatMap(d => tasksOn(d).filter(r => !meta(r.raw).done && !meta(r.raw).event).map(r => ({ r, d })));
-  const wmin = wdays.reduce((t, d) => t + dayLoad(d).all, 0), wcap = wdays.reduce((t, d) => t + capMin(d), 0);
+  const wmin = wdays.reduce((t, d) => t + minutes(tasksOn(d).filter(r => !meta(r.raw).done)).total, 0), wcap = wdays.reduce((t, d) => t + capMin(d), 0);
   const wcost = [...new Set(wopen.map(x => x.r))].reduce((c, r) => c + (meta(r.raw).cost ?? 0), 0);
   h("div", { class: "pln-sub pln-weektotal", title: "Open tasks planned on these seven days, with the buffer, against the hours of these days" }, root,
     `Week total: ${new Set(wopen.map(x => x.r)).size} open task${new Set(wopen.map(x => x.r)).size === 1 ? "" : "s"} · ${plusBuffer(wmin)} of ${fmtEst(wcap)}${wcost ? ` · ${wcost.toLocaleString(undefined, { style: "currency", currency: "EUR" })} to spend` : ""}`);
