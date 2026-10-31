@@ -234,7 +234,8 @@ function meta(raw) {
     commute: parseEst(f.commute) ?? 0, // minutes of travel before and after (drawn on the hours)
     recur: /🔁/u.test(raw), soon: SOON_LINES.has(raw.trim()) || /(^|\s)#soon\b/i.test(raw), created: raw.match(/➕ (\d{4}-\d{2}-\d{2})/u)?.[1] ?? null, id: raw.match(/🆔 ([\w-]+)/u)?.[1] ?? null,
     deps: (raw.match(/⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u)?.[1] ?? "").split(/\s*,\s*/).filter(Boolean),
-    pri: pm ? PRI[pm[0]] : 3, cost: price !== undefined ? price * (num(f.qty) ?? 1) : null, done: isDoneLine(raw), mode: (f.mode ?? "").toLowerCase(),
+    // a priority written on the line wins; unwritten, a Soon task is 🔼 medium and a study task 🔺 highest
+    pri: pm ? PRI[pm[0]] : SOON_LINES.has(raw.trim()) || /(^|\s)#soon\b/i.test(raw) ? 2 : STUDY_LINES.has(raw.trim()) ? 0 : 3, ownPri: pm ? PRI[pm[0]] : 3, cost: price !== undefined ? price * (num(f.qty) ?? 1) : null, done: isDoneLine(raw), mode: (f.mode ?? "").toLowerCase(),
     shops: shopsOf(raw),
   };
 }
@@ -252,10 +253,10 @@ function errands(list) {
 function errandMin(list) { return Math.max(GUESS, list.reduce((t, r) => t + (meta(r.raw).share ?? 0), 0)); }
 // Is the task on this day? A spread task is on every day from 🛫 to ⏳.
 const onDate = (m, date) => (m.spread ? m.start0 <= date && date <= m.sched : m.sched === date);
-// One meaning of urgent everywhere: overdue or due within SOON days, then high priority.
-// then Soon tasks (plan within a month of capture: the closer that month's end, the earlier), then high priority
+// One meaning of urgent everywhere: overdue, then due within SOON days (a Soon task's month ending counts as its
+// due date), then 🔺 highest, ⏫ high, 🔼 medium (Soon tasks), then the rest.
 const soonLeft = m => (m.soon && m.created ? daysUntil(m.created) + 30 : null);
-const urgency = m => { if (m.due) { const d = daysUntil(m.due); if (d <= 0) return 0; if (d <= SOON) return 1; } if (m.soon) { const l = soonLeft(m); return l !== null && l <= SOON ? 1 : 1.5; } return m.pri <= 1 ? 2 : 3; };
+const urgency = m => { if (m.due) { const d = daysUntil(m.due); if (d <= 0) return 0; if (d <= SOON) return 1; } if (m.soon) { const l = soonLeft(m); if (l !== null && l <= SOON) return 1; } return 2 + Math.min(m.pri, 3); };
 // A purchase never holds up the steps after it: buying can happen any time.
 const isPurchase = r => r.kids.every(k => meta(k.raw).done) && ("price" in parseFields(r.raw) || /^(buy|order|purchase)\b/i.test(label(r.raw)));
 const label = raw => strip(raw)
@@ -272,6 +273,7 @@ const label = raw => strip(raw)
 
 // ---------- read tasks ----------
 const SOON_LINES = new Set(); // task lines in the master list's ## Soon
+const STUDY_LINES = new Set(); // task lines in the study area (#study, or a note with area: study)
 const pages = dv.pages()
   .where(p => !EXCL.some(e => p.file.path.startsWith(e)) && p.file.path !== "10 Areas/Work/Work schedule.md" /* drawn from the Work schedule itself */ && !/(^|\/)templates\//i.test(p.file.path) && String(p.type ?? "") !== "checklist"
     && (SAMPLES || !isSample(p)) && (state.wholeVault || SCOPE.some(s => p.file.path.startsWith(s))))
@@ -306,6 +308,7 @@ for (const page of pages) {
       r.key = `${r.path}|${label(r.raw)}`;
       if (rows.some(x => x.key === r.key)) r.key += `|${rows.filter(x => x.key.startsWith(`${r.key}|`)).length + 2}`; // the same text twice in a note (a repeat purchase) stays two tasks
       if (inSoon) SOON_LINES.add(r.raw.trim());
+      if (r.area === "study") STUDY_LINES.add(r.raw.trim());
       rows.push(r);
       if (parent) parent.kids.push(r);
       walk(it.children ?? [], depth + 1, r);
@@ -321,6 +324,8 @@ for (const r of ALL) { const m = meta(r.raw); if (m.id && !m.done) BY_ID.set(m.i
 const blockers = r => meta(r.raw).deps.map(id => BY_ID.get(id)).filter(b => b && !meta(b.raw).done);
 // On an area tab only that area's tasks are shown (what counts as "next" still uses the whole outline).
 // (calendar events are fixed times whatever the area, so they show on every area tab)
+// The day's load, capacity and Suggest's budget still count every area (EVERY): one day, one person.
+const EVERY = [...ALL];
 if (AREA) ALL.splice(0, ALL.length, ...ALL.filter((r) => r.area === AREA || EVENT_RE.test(r.raw)));
 // What is "next": in a project note the top-level steps run in order; elsewhere every top-level task stands alone.
 // Purchases never hold up the steps after them, a ⏫ or 🔺 step is next wherever it sits, and a step waiting
@@ -344,7 +349,7 @@ function markNext() {
     const top = rows.filter(r => r.depth === 0);
     const nexts = isProject ? fromList(top, false) : top.flatMap(actionable);
     const leaves = rows.filter(r => !done(r) && !r.kids.some(k => !done(k)));
-    for (const r of leaves) if (meta(r.raw).pri <= 1 && !nexts.includes(r)) nexts.push(r);
+    for (const r of leaves) if (meta(r.raw).ownPri <= 1 && !nexts.includes(r)) nexts.push(r);
     for (const r of nexts) r.isNext = true;
     const first = nexts.find(r => !blockers(r).length);
     for (const r of leaves) if (!r.isNext) r.after = first ? label(first.raw) : null;
@@ -626,7 +631,7 @@ function chips(parent, r, m, { showSched = false, noBlocked = false } = {}) {
     const d = daysUntil(m.due);
     h("span", { class: `pln-chip${d < 0 ? " is-due" : d <= 2 ? " is-soon" : ""}`, title: `Due ${m.due}` }, parent, d < 0 ? `overdue ${-d}d` : d === 0 ? "due today" : d === 1 ? "due tomorrow" : `due in ${d}d`);
   }
-  if (m.pri < 3) h("span", { class: "pln-chip", title: "Priority" }, parent, PRI_LABEL[m.pri]);
+  if (m.pri < 3) h("span", { class: "pln-chip", title: m.ownPri === m.pri ? "Priority" : m.pri === 0 ? "Study task: highest unless you give it a priority" : "In Soon: medium unless you give it a priority" }, parent, PRI_LABEL[m.pri]);
   if (m.shops.length) h("span", { class: "pln-chip", title: `Bought on one trip with the other tasks for ${m.shops.join(" or ")} (the [shop::] field)` }, parent, `🛒 ${m.shops.join(" / ")}`);
   if (showSched && m.sched) h("span", { class: "pln-chip" }, parent, dayLabel(m.sched));
   // planned or not, a step whose ⛔ blocker is still open says so
@@ -653,7 +658,7 @@ const capMin = date => {
   return Math.max(0, Math.min(base, d1 - d0 - taken)); // on a workday only the time around work and commute is left
 };
 
-// Overdue and due within SOON days first, then high priority, then the nearest due date, then the shortest.
+// Overdue and due within SOON days first, then by priority (🔺 ⏫ 🔼), then the nearest due date, then the shortest.
 function suggestedOrder(list) {
   return [...list].sort((a, b) => {
     const A = meta(a.raw), B = meta(b.raw);
@@ -670,11 +675,17 @@ function todayBudget() {
 }
 let suggestionNote = "";
 // Tasks on a day: planned for it, or spread over it; a repeating task whose date has passed shows on today.
-const tasksOn = date => ALL.filter(r => { const m = meta(r.raw); return onDate(m, date) || (date === TODAY && m.recur && !m.done && m.sched && m.sched < TODAY); });
+const onDay = date => r => { const m = meta(r.raw); return onDate(m, date) || (date === TODAY && m.recur && !m.done && m.sched && m.sched < TODAY); };
+const tasksOn = date => ALL.filter(onDay(date));
+// a day's open work in minutes: all = every area (what the day holds), own = this tab's area
+const dayLoad = date => { const open = EVERY.filter(onDay(date)).filter(r => !meta(r.raw).done), all = minutes(open).total; return { all, own: AREA ? minutes(open.filter(r => r.area === AREA)).total : all }; };
+const AREA_LABEL = AREA ? (app.plugins?.plugins?.["ex3c-agenda"]?.areaName?.(AREA) || AREA).toLowerCase() : "";
+// "3h 8m + buffer = 4h of 4h"; on an area tab "1h 59m work, 1h 52m other + buffer = 4h 49m of 4h"
+const loadText = (L, cap) => (AREA && L.all > L.own ? `${fmtEst(L.own)} ${AREA_LABEL}, ${fmtEst(L.all - L.own)} other${Number(state.buffer) ? ` + buffer = ${fmtEst(withBuffer(L.all))}` : ""}` : plusBuffer(L.all)) + ` of ${fmtEst(cap)}`;
 // Suggest for today or any later day (evening planning: tomorrow). Today stops at your day's end; a later day has
 // your full hours. A task longer than a day counts with one day's share and is spread when you plan it.
 function suggestFor(date) {
-  let used = withBuffer(minutes(tasksOn(date).filter(r => !meta(r.raw).done)).total);
+  let used = withBuffer(dayLoad(date).all);
   const { budget, left } = date === TODAY ? todayBudget() : { budget: capMin(date), left: Infinity };
   const pick = [], trips = [], seen = new Set();
   const cand = suggestedOrder(pool()).filter(r => { const m = meta(r.raw); return !(m.recur && m.sched); });
@@ -696,6 +707,8 @@ function suggestFor(date) {
   }
   suggestion = { date, keys: pick, trips };
   suggestionNote = date === TODAY && left < capMin(TODAY) ? ` Only ${fmtEst(left)} left before your day ends at ${state.dayEnd}.` : "";
+  const L = dayLoad(date);
+  if (L.all > L.own) suggestionNote += ` Other areas already have ${fmtEst(L.all - L.own)} planned that day; it counts against your ${fmtEst(budget)}.`;
   render();
 }
 const dayName = d => (d === TODAY ? "today" : d === TOMORROW ? "tomorrow" : dayLabel(d));
@@ -803,7 +816,7 @@ function render() {
     const spreads = picked.filter(r => !inTrip.has(r.key) && spanDays(meta(r.raw).est) > 1).length;
     const tasksN = picked.length - inTrip.size + trips.length;
     h("p", { style: "margin:0 0 6px" }, box, picked.length
-      ? `Suggested for ${name}: ${tasksN} task${tasksN === 1 ? "" : "s"}${trips.length ? ` (${trips.length} of them ${trips.length === 1 ? "an errand" : "errands"}, one trip per shop)` : ""}, about ${plusBuffer(mins)}. Overdue and due within ${SOON} days first, then Soon, then high priority, then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
+      ? `Suggested for ${name}: ${tasksN} task${tasksN === 1 ? "" : "s"}${trips.length ? ` (${trips.length} of them ${trips.length === 1 ? "an errand" : "errands"}, one trip per shop)` : ""}, about ${plusBuffer(mins)}. Overdue and due within ${SOON} days first, then 🔺 highest, ⏫ high, 🔼 medium (Soon), then shortest. They are highlighted below.${spreads ? ` ${spreads} of them ${spreads === 1 ? "is" : "are"} longer than a day and will be spread over the following days.` : ""}${suggestionNote}`
       : `Nothing fits: ${name} is already full, or there are no next steps.${suggestionNote}${date === TODAY ? " Try Suggest tomorrow." : ""}`);
     for (const t of trips) {
       const items = t.keys.map(k => byKey.get(k)).filter(Boolean);
@@ -844,10 +857,10 @@ function render() {
     const head = h("div", { class: "pln-day-head", title: "Show this day in the timeline below", style: "cursor:pointer" }, col);
     head.addEventListener("click", () => { tlDay = date; render(); });
     h("span", {}, head, date === TODAY ? `Today, ${dayLabel(date)}` : dayLabel(date));
-    const mm = minutes(open), planned = withBuffer(mm.total), cap = capMin(date);
+    const mm = minutes(open), L = dayLoad(date), planned = withBuffer(L.all), cap = capMin(date);
     const capEl = h("div", { class: `pln-cap${planned > cap ? (date > TODAY ? " is-full" : " is-over") : planned > cap * 0.85 ? " is-full" : ""}`, title: "Planned time with buffer, against your hours per day" }, col);
     h("div", { style: `width:${cap ? Math.min(100, (100 * planned) / cap) : 0}%` }, capEl);
-    h("div", { class: "pln-sub" }, col, `${plusBuffer(mm.total)} of ${fmtEst(cap)}${mm.missing ? ` · ${mm.missing} without estimate` : ""}`);
+    h("div", { class: "pln-sub" }, col, `${loadText(L, cap)}${mm.missing ? ` · ${mm.missing} without estimate` : ""}`);
     for (const r of [...tasks].sort((a, b) => (meta(a.raw).start ?? 9999) - (meta(b.raw).start ?? 9999))) item(col, r, { day: date });
     birthdayMarks(col, date);
     const deadlines = ALL.filter(r => { const m = meta(r.raw); return m.due === date && !m.done && !onDate(m, date); });
@@ -1353,6 +1366,14 @@ function hourGrid(parent, day, g0, g1, timed, { labels = true } = {}) {
     h("b", {}, el, b.what);
     if (!otherArea && (e - s) * PXM >= 28) h("span", { class: "pln-bt" }, el, ` ${clock(b.s)} - ${clock(b.e)}`);
   }
+  // on an area tab, other areas' tasks with a time are a light shade: the time is taken, the page stays about its area
+  if (AREA) for (const r of EVERY.filter(r => r.area !== AREA && !EVENT_RE.test(r.raw))) {
+    const m = meta(r.raw);
+    if (!onDate(m, day) || m.start === null || m.done) continue;
+    const s = Math.max(m.start, g0), e = Math.min(m.end, g1);
+    if (e <= s) continue;
+    h("div", { class: "pln-work is-other", style: `top:${(s - g0) * PXM}px;height:${Math.max(12, (e - s) * PXM - 2)}px;--blk:${AREA_COLORS[r.area] ?? "var(--text-faint)"}`, title: `${r.area ?? "No area"}: ${label(r.raw)} ${clock(m.start)} - ${clock(m.end)}. Plan it on its own tab or Home.` }, grid);
+  }
   commuteBlocks(grid, day, g0, g1, timed);
   const nowMin = NOW.getHours() * 60 + NOW.getMinutes();
   if (day === TODAY && nowMin >= g0 && nowMin < g1) h("div", { class: "pln-now", style: `top:${(nowMin - g0) * PXM}px` }, grid);
@@ -1471,7 +1492,7 @@ function weekView(box, hd) {
     : "Drag a next step onto a day and an hour (on a phone: press and hold, or tap it and then tap an hour). A day's tasks without a time wait in the row under its date; drag them into the hours. Drag a block to another day or hour, its bottom edge to change its length, onto a day's row to take its time off, or back to the list. Tap a date to open that day. Drag across empty hours, over several days if you like, to select a range and see what is in it.");
 
   // the answer first: how full these days are, and which day is over
-  const loads = days.map(d => { const own = minutes(tasksOn(d).filter(r => !meta(r.raw).done)).total; return { d, own, m: withBuffer(own) }; });
+  const loads = days.map(d => { const own = dayLoad(d).all; return { d, own, m: withBuffer(own) }; });
   const total = loads.reduce((t, x) => t + x.own, 0), over = loads.filter(x => x.m > capMin(x.d));
   h("p", { class: "pln-answer" }, box, `${plusBuffer(total)} planned of ${fmtEst(days.reduce((t, d) => t + capMin(d), 0))} ${IDEAL_ON ? "of task time in your Ideal Week" : ""} on these ${n} days.${over.length ? ` Over: ${over.map(x => `${short(x.d)} by ${fmtEst(x.m - capMin(x.d))}`).join(", ")}.` : " Every day fits."}`.replace("  on", " on"));
   selPanel(box, "above");
@@ -1489,12 +1510,12 @@ function weekView(box, hd) {
   for (const day of days) {
     const cap = capMin(day);
     const open = tasksOn(day).filter(r => !meta(r.raw).done);
-    const own = minutes(open).total, planned = withBuffer(own);
+    const L = dayLoad(day), planned = withBuffer(L.all);
     const dh = h("div", { class: `pln-cal-dh${day === TODAY ? " is-today" : ""}${day < TODAY ? " is-past" : ""}`, title: "Open this day in the day view" }, head);
     h("div", {}, dh, day === TODAY ? `Today ${short(day).split(" ")[1]}` : short(day));
     const capEl = h("div", { class: `pln-cap${planned > cap ? (day > TODAY ? " is-full" : " is-over") : planned > cap * 0.85 ? " is-full" : ""}`, title: "Planned time with buffer, against your hours per day" }, dh);
     h("div", { style: `width:${cap ? Math.min(100, (100 * planned) / cap) : 0}%` }, capEl);
-    h("div", { class: "pln-sub" }, dh, `${plusBuffer(own)} of ${fmtEst(cap)}`);
+    h("div", { class: "pln-sub" }, dh, loadText(L, cap));
     dh.addEventListener("click", () => { tlDay = day; state.tlMode = "day"; save(); render(); });
     const lane = h("div", { class: "pln-day pln-lane", "data-day": day }, lanes);
     birthdayMarks(lane, day);

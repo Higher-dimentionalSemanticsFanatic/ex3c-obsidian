@@ -161,7 +161,7 @@ async function newLecture() {
   else file = await app.vault.create(path, tpl ? await app.vault.read(tpl) : "");
   const n = dv.pages().where(p => p.course?.path === page.file.path && (p.file.tags ?? []).includes("#lecture")).length + 1;
   await app.fileManager.processFrontMatter(file, fm => { fm.course = `[[${page.file.name}]]`; fm.lecture = n; fm.area = "study"; });
-  await appendUnder(page.file.path, "## Lectures", [`- [ ] Recall questions for [[${file.basename}]] [est:: 15m] 📅 ${addDays(TODAY, 1)}`]);
+  await appendUnder(page.file.path, "## Lectures", [`- [ ] Recall questions for [[${file.basename}]] [est:: 15m] 🔺 📅 ${addDays(TODAY, 1)}`]);
   await app.workspace.getLeaf(false).openFile(file);
 }
 
@@ -178,9 +178,9 @@ async function planBackwards(info, exam) {
   const lines = [];
   todo.forEach((x, i) => {
     const q = x.q ? `answer its ${x.q} recall question${x.q === 1 ? "" : "s"} first, then reread what you missed` : "write its recall questions first, then answer them";
-    lines.push(`- [ ] Review [[${x.p.file.name}]]: ${q} [est:: 30m] ⏳ ${at(i, todo.length, 0, cut)}`);
+    lines.push(`- [ ] Review [[${x.p.file.name}]]: ${q} [est:: 30m] 🔺 ⏳ ${at(i, todo.length, 0, cut)}`);
   });
-  todo.forEach((x, i) => lines.push(`- [ ] Review again [[${x.p.file.name}]]: recall questions only [est:: 15m] ⏳ ${at(i, todo.length, cut + 1, span - cut - 1)}`));
+  todo.forEach((x, i) => lines.push(`- [ ] Review again [[${x.p.file.name}]]: recall questions only [est:: 15m] 🔺 ⏳ ${at(i, todo.length, cut + 1, span - cut - 1)}`));
   const pretty = l => l.replace(/^- \[ \] /, "").replace(/\[\[(?:\d{4}-\d{2}-\d{2} )?([^\]]+)\]\]/, "$1").replace(/ \[est:: ([^\]]+)\]/, " ($1)").replace(/⏳ (\d{4})-(\d{2})-(\d{2})/, "on $3-$2-$1");
   const title = `Add ${lines.length} review steps to ${page.file.name}, between ${dmy(start)} and ${dmy(end)}`;
   if (!(await confirmBox(title, lines.map(pretty)))) return;

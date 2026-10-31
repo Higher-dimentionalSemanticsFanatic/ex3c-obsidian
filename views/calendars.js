@@ -106,14 +106,26 @@ const areaName = a => app.plugins.plugins["ex3c-agenda"]?.areaName?.(a) || a[0].
 const links = () => (Array.isArray(dv.page(CFG)?.calendar_links) ? dv.page(CFG).calendar_links : []).filter(l => l && l.url).map(l => ({ name: String(l.name || "Calendar").replace(/[\\/:*?"<>|#^[\]]/g, " ").trim() || "Calendar", url: String(l.url), area: /^[a-z0-9-]+$/.test(String(l.area || "")) ? String(l.area) : "", off: l.off === true }));
 const plain = l => ({ name: l.name, url: l.url, ...(l.area ? { area: l.area } : {}), ...(l.off ? { off: true } : {}) });
 const linkTarget = l => `${LINK_DIR}/${l.name} (calendar).md`;
+// The last failed fetch per address, kept on the plugin for this session, so the row can say so after a redraw.
+const errors = plugin ? (plugin.calendarErrors ??= {}) : {};
+const friendly = e => /net::|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|Failed to fetch|PROXY|INTERNET_DISCONNECTED/i.test(String(e?.message ?? e)) ? "no connection, or the address cannot be reached" : /status (401|403|404)/.test(String(e?.message ?? e)) ? "the address was refused; copy the secret iCal address again" : String(e?.message ?? e);
 async function fetchLink(l) {
-  if (!plugin?.fetchText) throw new Error("the EX3C AgendA plugin is needed to fetch calendar links");
-  const text = await plugin.fetchText(l.url);
-  if (!/BEGIN:VCALENDAR/.test(text)) throw new Error("that address did not return a calendar (.ics)");
-  const lines = eventLines(text);
-  await writeNote(linkTarget(l), calendarNote(`the calendar link "${l.name}"`, lines, l.area));
-  return lines.length;
+  try {
+    if (!plugin?.fetchText) throw new Error("the EX3C AgendA plugin is needed to fetch calendar links");
+    const text = await plugin.fetchText(l.url);
+    if (!/BEGIN:VCALENDAR/.test(text)) throw new Error("that address did not return a calendar (.ics)");
+    const lines = eventLines(text);
+    await writeNote(linkTarget(l), calendarNote(`the calendar link "${l.name}"`, lines, l.area));
+    delete errors[l.url];
+    return lines.length;
+  } catch (e) {
+    errors[l.url] = { at: new Date(), msg: friendly(e) };
+    throw new Error(errors[l.url].msg);
+  }
 }
+// what a link's row says when its last fetch failed: when, why, and which events the planner still shows
+const failText = (l, page) => { const er = errors[l.url]; if (!er) return ""; const t = page?.fetched ? new Date(String(page.fetched)) : null;
+  return `refresh failed at ${hm(er.at)}: ${er.msg}. ${t ? `Still showing the ${page.file.tasks.length} events from ${pad(t.getDate())}-${pad(t.getMonth() + 1)} ${hm(t)}.` : "No events yet."}`; };
 // switched off: the note keeps no events (so the planner and Day Planner show none) until you switch it on again
 const offNote = l => writeNote(linkTarget(l), `---\ntags:\n  - calendar\n${l.area ? `area: ${l.area}\n` : ""}off: true\n---\nThe calendar link "${l.name}" is switched off on the Calendars page; switch it on to fetch its events again.\n\n## Events\n`);
 async function saveLinks(list) {
@@ -127,7 +139,12 @@ if (input?.refresh) {
     const age = fetched ? Date.now() - new Date(String(fetched)).getTime() : Infinity;
     if (input.refresh === "all" || !(age < 6 * 3600000)) {
       try { const n = await fetchLink(l); if (input.refresh === "all") notify(`${l.name}: ${n} events`); }
-      catch (e) { console.warn(`Calendar link ${l.name}`, e); if (input.refresh === "all") notify(`${l.name}: ${e.message}`); }
+      catch (e) {
+        console.warn(`Calendar link ${l.name}`, e);
+        // the start-up refresh says it once a session; Refresh all says it every time
+        const shown = plugin ? (plugin.calendarErrorShown ??= new Set()) : new Set();
+        if (input.refresh === "all" || !shown.has(l.url)) { shown.add(l.url); notify(`Calendar "${l.name}" could not be refreshed: ${e.message}. The planner keeps its last events; see Calendars.`); }
+      }
     }
   }
   return;
@@ -167,7 +184,7 @@ for (const l of links()) {
     sw.disabled = false;
   });
   row.createEl("strong", { text: l.name });
-  row.createEl("span", { attr: { style: "flex:1;min-width:10em;color:var(--text-muted);font-size:12px" }, text: l.off ? "switched off" : page?.fetched ? (() => { const t = new Date(String(page.fetched)); return `${page.file.tasks.length} events, refreshed ${pad(t.getDate())}-${pad(t.getMonth() + 1)} ${hm(t)}`; })() : "not fetched yet" });
+  const status = row.createEl("span", { attr: { style: `flex:1;min-width:10em;color:var(${!l.off && errors[l.url] ? "--text-error" : "--text-muted"});font-size:12px` }, text: l.off ? "switched off" : errors[l.url] ? failText(l, page) : page?.fetched ? (() => { const t = new Date(String(page.fetched)); return `${page.file.tasks.length} events, refreshed ${pad(t.getDate())}-${pad(t.getMonth() + 1)} ${hm(t)}`; })() : "not fetched yet" });
   // its area: the events' colour in the planner (the note's area property), no refetch needed
   const sel = areaPicker(row, l.area);
   sel.addEventListener("change", async () => {
@@ -180,7 +197,12 @@ for (const l of links()) {
   ob.addEventListener("click", () => app.workspace.openLinkText(linkTarget(l), "", false));
   const rb = row.createEl("button", { text: "Refresh" });
   rb.disabled = l.off;
-  rb.addEventListener("click", async () => { rb.disabled = true; try { notify(`${l.name}: ${await fetchLink(l)} events`); } catch (e) { notify(`${l.name}: ${e.message}`); } rb.disabled = false; });
+  rb.addEventListener("click", async () => {
+    rb.disabled = true; rb.setText("Refreshing...");
+    try { notify(`${l.name}: ${await fetchLink(l)} events`); }
+    catch (e) { notify(`${l.name}: ${e.message}`); status.setText(failText(l, page)); status.style.color = "var(--text-error)"; }
+    rb.disabled = false; rb.setText("Refresh");
+  });
   // Remove asks once more: it forgets the address and moves the note to the trash
   const xb = row.createEl("button", { text: "Remove" });
   let armed = null;

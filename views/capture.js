@@ -191,6 +191,9 @@ function parse(input) {
   if (out.price) bits.push(`[price:: ${out.price}]`);
   if (out.qty) bits.push(`[qty:: ${out.qty}]`);
   bits.push(...out.fields);
+  // a study task is 🔺 highest unless you gave it a priority ("prio normal" keeps it without one)
+  const isStudy = out.tags.some(t => t.toLowerCase() === "#study") || (!typedArea && projectArea === "study");
+  if (out.pri === undefined && isStudy) out.pri = "🔺";
   if (out.pri) bits.push(out.pri);
   if (out.repeat) bits.push(`🔁 ${out.repeat}`);
   // the Tasks plugin only repeats a task that has a date, so a repeat without one starts on its first day
