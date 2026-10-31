@@ -467,6 +467,16 @@ h("style", {}, root, `
 .pln-wkw.is-narrow { grid-template-columns: minmax(0, 1fr); }
 .pln-wkw.is-narrow .pln-pool { max-height: 200px; }
 .pln-cal { min-width: 0; }
+.pln-cal-strip { overflow: auto; max-height: 70vh; min-width: 0; scroll-snap-type: x proximity; border: 1px solid var(--background-modifier-border); border-radius: 6px; }
+.pln-cal.is-strip { width: max-content; }
+.pln-cal.is-strip .pln-gs { max-height: none; overflow: visible; border: 0; border-radius: 0; }
+/* the dates stay on top while the hours scroll */
+.pln-cal.is-strip > .pln-cal-row:first-child { position: sticky; top: 0; z-index: 4; background: var(--background-secondary); }
+.pln-cal.is-strip .pln-cal-row { grid-template-columns: 38px repeat(var(--n), 108px); }
+.pln-cal.is-strip .pln-cal-dh { scroll-snap-align: start; scroll-margin-left: 38px; }
+/* the hours (and the corner above them) stay put while the days scroll */
+.pln-cal.is-strip .pln-cal-row > :first-child { position: sticky; left: 0; z-index: 3; background: var(--background-secondary); }
+.pln-cal.is-strip > .pln-cal-row:first-child > :first-child { z-index: 5; }
 .pln-cal-row { display: grid; grid-template-columns: 38px repeat(var(--n), minmax(0, 1fr)); }
 .pln-cal-dh { padding: 3px 4px; font-size: 11px; font-weight: 600; border-left: 1px solid var(--background-modifier-border); cursor: pointer; min-width: 0; }
 .pln-cal-dh.is-today { color: var(--text-accent); }
@@ -1439,19 +1449,20 @@ function timeline(root) {
 // "HH:MM - HH:MM" after the checkbox (Day Planner's format), 🛫 and ⏳ for a task spread over days.
 function weekView(box, hd) {
   const width = root.getBoundingClientRect().width || window.innerWidth;
-  // seven days from about 600 px; below that three days, moved a day at a time. The list goes on top below 900 px.
-  const narrow = width < 600, n = narrow ? 3 : 7, stacked = width < 900;
-  const first = narrow ? tlDay : iso(addDays(mondayOf(TODAY_D), state.weekOffset * 7));
+  // seven days; below about 600 px they sit in a strip that scrolls sideways (about three on screen), opening at the
+  // day you were on, with the hours pinned on the left. The list goes on top below 900 px.
+  const narrow = width < 600, n = 7, stacked = width < 900;
+  const first = iso(addDays(mondayOf(TODAY_D), state.weekOffset * 7));
   const days = Array.from({ length: n }, (_, i) => iso(addDays(asDate(first), i)));
   const short = d => `${asDate(d).toLocaleDateString(undefined, { weekday: "short" })} ${d.slice(8, 10)}-${d.slice(5, 7)}`;
   const nav = h("span", { style: "font-weight:normal;margin-left:6px" }, hd);
-  const move = k => { if (narrow) tlDay = iso(addDays(asDate(tlDay), k)); else state.weekOffset += k > 0 ? 1 : -1; save(); render(); };
-  h("button", { class: "pln-btn", title: narrow ? "A day earlier" : "Week before" }, nav, "‹").addEventListener("click", () => move(-1));
+  const move = k => { state.weekOffset += k > 0 ? 1 : -1; save(); render(); };
+  h("button", { class: "pln-btn", title: "Week before" }, nav, "‹").addEventListener("click", () => move(-1));
   h("span", { style: "margin:0 6px" }, nav, `${short(days[0])} to ${short(days[n - 1])}-${days[n - 1].slice(0, 4)}`);
-  h("button", { class: "pln-btn", title: narrow ? "A day later" : "Week after" }, nav, "›").addEventListener("click", () => move(1));
-  if (narrow ? tlDay !== TODAY : state.weekOffset !== 0) {
-    const tb = h("button", { class: "pln-btn", style: "margin-left:4px" }, nav, narrow ? "Today" : "This week");
-    tb.addEventListener("click", () => { if (narrow) tlDay = TODAY; else state.weekOffset = 0; save(); render(); });
+  h("button", { class: "pln-btn", title: "Week after" }, nav, "›").addEventListener("click", () => move(1));
+  if (state.weekOffset !== 0) {
+    const tb = h("button", { class: "pln-btn", style: "margin-left:4px" }, nav, "This week");
+    tb.addEventListener("click", () => { state.weekOffset = 0; save(); render(); });
   }
   const tools = h("div", { class: "pln-bar", style: "margin:2px 0 8px" }, box);
   const dp = h("button", { class: "pln-btn" }, tools, "Day Planner week ↗");
@@ -1471,7 +1482,8 @@ function weekView(box, hd) {
   if (!next.length) h("div", { class: "pln-sub" }, poolEl, "No unplanned next steps.");
   for (const r of next) poolItem(poolEl, r);
 
-  const cal = h("div", { class: "pln-cal", style: `--n:${n}` }, wrap);
+  const strip = narrow ? h("div", { class: "pln-cal-strip" }, wrap) : wrap;
+  const cal = h("div", { class: `pln-cal${narrow ? " is-strip" : ""}`, style: `--n:${n}` }, strip);
   const head = h("div", { class: "pln-cal-row" }, cal); h("div", {}, head);
   const lanes = h("div", { class: "pln-cal-row" }, cal); h("div", { class: "pln-cal-gut", title: "Planned for the day, no time yet" }, lanes, "no time");
   for (const day of days) {
@@ -1503,7 +1515,15 @@ function weekView(box, hd) {
   const nowMin = NOW.getHours() * 60 + NOW.getMinutes();
   const focus = days.includes(TODAY) ? nowMin - 60 : (firstBlock.length ? Math.min(...firstBlock) : g0) - 30;
   const key = `week:${first}`;
-  requestAnimationFrame(() => { gs.scrollTop = UI.gridScroll[key] ?? Math.max(0, (focus - g0) * PXM); });
+  requestAnimationFrame(() => {
+    if (!narrow) { gs.scrollTop = UI.gridScroll[key] ?? Math.max(0, (focus - g0) * PXM); return; }
+    // the strip scrolls both ways: it opens at the day you were on (today in this week) and the hour of your first block,
+    // or where you left it
+    const at = days.indexOf(days.includes(tlDay) ? tlDay : TODAY), colW = (cal.scrollWidth - 38) / n, saved = UI.stripScroll?.[key];
+    strip.scrollLeft = saved?.x ?? Math.max(0, at) * colW;
+    strip.scrollTop = saved?.y ?? Math.max(0, gs.offsetTop - head.offsetHeight + (focus - g0) * PXM);
+  });
+  if (narrow) strip.addEventListener("scroll", () => { (UI.stripScroll ??= {})[key] = { x: strip.scrollLeft, y: strip.scrollTop }; }, { passive: true });
   gs.addEventListener("scroll", () => { UI.gridScroll[key] = gs.scrollTop; });
   selPanel(box, "below");
 }
