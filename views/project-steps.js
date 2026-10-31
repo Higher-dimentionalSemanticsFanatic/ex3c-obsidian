@@ -310,7 +310,10 @@ function labelRow(labels, r, i, path, ROW, opts = {}) {
   const t = lab.createEl("span", { text: clean(r.raw), cls: "pg-text" });
   t.title = clean(r.raw);
   t.addEventListener("click", () => app.workspace.openLinkText(path, "", false, { eState: { line: r.line } }));
-  if (r.blockedBy?.length) lab.createEl("span", { cls: "pg-blocked", text: "⛔", attr: { title: `Blocked: waits for ${r.blockedBy.join(", ")}` } });
+  if (r.blockedBy?.length) {
+    const bk = lab.createEl("span", { cls: "pg-blocked", text: "⛔", attr: { title: `Blocked: waits for ${r.blockedBy.join(", ")}. Click to remove a link.` } });
+    bk.addEventListener("click", e => { e.stopPropagation(); linkMenu(e, r, depsOf(r).filter(id => OPEN_IDS.has(id))); });
+  }
   lab.createEl("span", { cls: "pg-meta", text: rowMeta(r, path) });
   return lab;
 }
@@ -716,10 +719,9 @@ function dragBar(el, r, kind, PX) {
 }
 
 // Drag a parent bar sideways: the step and every open sub-step under it move by the same number of days.
-// Written dates (🛫 ⏳ 📅) shift; a parent without its own start gets 🛫 so undated sub-steps follow it.
+// Planned dates (🛫 ⏳) shift; 📅 deadlines stay. A parent without its own start gets 🛫 so undated sub-steps follow it.
 // Changing several tasks asks first (count and list) and can be undone (shared Undo with the planner).
 const shiftDate = (line, emoji, n) => line.replace(new RegExp(`${emoji} (\\d{4}-\\d{2}-\\d{2})`, "u"), (m, d) => `${emoji} ${addDays(d, n)}`);
-const shiftLine = (line, n) => ["🛫", "⏳", "📅"].reduce((l, e) => shiftDate(l, e, n), line);
 const descendants = r => r.kids.flatMap(k => [k, ...descendants(k)]);
 const UNDO_KEY = "compass-proto-planner-undo"; // the planner's key, so its Undo bar covers this too
 const loadUndo = () => { try { return JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); } catch (e) { return null; } };
@@ -743,7 +745,7 @@ function confirmBox(title, lines, yesText) {
 }
 async function moveGroup(r, n) {
   const list = [r, ...descendants(r)].filter(x => !x.done);
-  const fnFor = x => line => { let next = shiftLine(line, n); if (x === r && !/[🛫⏳] \d{4}-\d{2}-\d{2}/u.test(line)) next = setDate(next, "🛫", addDays(x.s, n)); return next; };
+  const fnFor = x => line => { let next = shiftPlan(line, n); if (x === r && !/[🛫⏳] \d{4}-\d{2}-\d{2}/u.test(line)) next = setDate(next, "🛫", addDays(x.s, n)); return next; };
   const plan = list.map(x => ({ x, fn: fnFor(x) })).filter(c => c.fn(c.x.raw) !== c.x.raw);
   const undated = list.filter(x => x !== r && !/[🛫⏳📅] \d{4}-\d{2}-\d{2}/u.test(x.raw)).length;
   if (!plan.length) return false;
@@ -940,6 +942,17 @@ function linkHandle(bar, r, plot) {
     document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", cancel);
   });
 }
+// Remove a link: takes the blocker's id off the waiting step's ⛔ (the whole ⛔ when it was the only one); the 🆔 on
+// the other step stays, it does nothing on its own. Undo above the chart puts it back.
+const dropDep = (line, id) => line.replace(/\s*⛔ ([\w-]+(?:\s*,\s*[\w-]+)*)/u, (m, ids) => { const left = ids.split(/\s*,\s*/).filter(x => x !== id); return left.length ? ` ⛔ ${left.join(",")}` : ""; });
+function linkMenu(evt, r, ids) {
+  const plugin = app.plugins.plugins["ex3c-agenda"];
+  const items = ids.map(id => ({ title: `Remove link: no longer waits for "${OPEN_IDS.get(id) ?? id}"`, icon: "unlink", run: async () => {
+    if (await applyPlan(r.path, [{ x: r, fn: l => dropDep(l, id) }], `Removed link: "${clean(r.raw)}" no longer waits for "${OPEN_IDS.get(id) ?? id}"`)) { notify(`"${clean(r.raw)}" no longer waits. Undo is above the chart.`); redraw(); }
+  } }));
+  items.push({ title: `Open "${clean(r.raw)}" in its note`, icon: "file-text", run: () => app.workspace.openLinkText(r.path, "", false, { eState: { line: r.line } }) });
+  if (plugin?.showMenu) plugin.showMenu(evt, items); else if (items.length > 1) void items[0].run();
+}
 // thin arrows from the end of a step to the start of each step that waits for it (same chart, both shown)
 function depArrows(plot, vis, span, ROW) {
   const byId = new Map(); vis.forEach((r, i) => { const id = idOf(r); if (id) byId.set(id, i); });
@@ -954,6 +967,11 @@ function depArrows(plot, vis, span, ROW) {
       const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
       p.setAttribute("d", `M${x1},${y1} H${mx} V${y2} H${x2 - 2}`);
       p.setAttribute("class", x2 < x1 ? "is-conflict" : "");
+      // a wide invisible copy of the line takes the click: Remove link
+      const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      hit.setAttribute("d", p.getAttribute("d")); hit.setAttribute("class", "pg-dep-hit");
+      hit.addEventListener("click", e => { e.stopPropagation(); linkMenu(e, r, [id]); });
+      svg.appendChild(hit);
       const t = document.createElementNS("http://www.w3.org/2000/svg", "title"); t.textContent = `${clean(r.raw)} waits for ${clean(vis[j].raw)}${x2 < x1 ? " (but starts before it ends)" : ""}`; p.appendChild(t);
       svg.appendChild(p);
     }
@@ -1034,7 +1052,7 @@ if (input?.allProjects && files.length) {
 @media (hover: none) { .pg-split { flex-basis: 18px; margin: 0 -9px; } .pg-split::after { left: 8px; background: var(--background-modifier-border); } }
 .pg-drop { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--interactive-accent); z-index: 5; pointer-events: none; }
 .pg-with { position: absolute; font-size: 11px; color: var(--text-accent); z-index: 4; }
-.pg-blocked { color: var(--color-red); font-size: 11px; flex-shrink: 0; cursor: help; }
+.pg-blocked { color: var(--color-red); font-size: 11px; flex-shrink: 0; cursor: pointer; }
 .pg-bar.is-blocked { background-image: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--background-primary) 55%, transparent) 4px 7px); }
 .pg-sum { font-size: 12px; color: var(--text-muted); }
 .pg-link { position: absolute; right: -11px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: var(--background-primary); border: 2px solid var(--text-accent); cursor: crosshair; touch-action: none; opacity: 0; z-index: 5; }
@@ -1044,6 +1062,8 @@ if (input?.allProjects && files.length) {
 .pg-bar.is-linktarget { box-shadow: 0 0 0 2px var(--text-accent); }
 .pg-deps { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: visible; }
 .pg-deps path { fill: none; stroke: var(--text-muted); stroke-width: 1.2; marker-end: none; }
+.pg-deps path.pg-dep-hit { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+.pg-deps path.pg-dep-hit:hover { stroke: color-mix(in srgb, var(--text-accent) 30%, transparent); }
 .pg-deps path.is-conflict { stroke: var(--color-red); stroke-dasharray: 3 2; }
 .pg-legend { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 ` });
@@ -1110,7 +1130,7 @@ if (input?.allProjects && files.length) {
       else {
         charts(p, sec);
         if (timeModeOf(p) === "sequence") sec.createEl("div", { cls: "pg-legend", text: "Sequence: the hours of work still to do, in outline order (indent to nest, [mode:: parallel] side by side, ⛔ waits for a 🆔), each as long as its estimate. Done steps are off the axis (✓ with their date). [ ] bracket = a parent over its open steps, filled to the share done; ▸ folded. Drag a bar's right edge to change its estimate; drag a step (bar or ⋮⋮) up or down to move it; drag a bar left onto the start of the step above to run them side by side (∥, writes [with:: previous]). Bands are work days of " + HOURS_PER_DAY + "h. Switch to Calendar once you want dates." });
-        else sec.createEl("div", { cls: "pg-legend", text: `■ planned (🛫 ⏳ 📅) · dashed: not planned yet, placed in outline order at ${HOURS_PER_DAY}h a day plus ${BUFFER}% buffer · grey ✓: done, on its ✅ date · [ ] bracket: a parent over its open steps, filled to the share done · ▸ folded · red: overdue · ⚑ due date · red dashed line: the project's due date (orange outline: a step that ends after it). Dragging plans (⏳, or 🛫 and ⏳); it never moves a 📅 deadline, and asks whether the later steps and the steps waiting for it (⛔) move along. Hatched with ⛔: waits for an open step; thin lines: what waits for what. Drag the dot at a bar's end onto another bar to make that one wait for it (🆔 and ⛔). Each heading with tasks is its own chart.` });
+        else sec.createEl("div", { cls: "pg-legend", text: `■ planned (🛫 ⏳ 📅) · dashed: not planned yet, placed in outline order at ${HOURS_PER_DAY}h a day plus ${BUFFER}% buffer · grey ✓: done, on its ✅ date · [ ] bracket: a parent over its open steps, filled to the share done · ▸ folded · red: overdue · ⚑ due date · red dashed line: the project's due date (orange outline: a step that ends after it). Dragging plans (⏳, or 🛫 and ⏳); it never moves a 📅 deadline, and asks whether the later steps and the steps waiting for it (⛔) move along. Hatched with ⛔: waits for an open step; thin lines: what waits for what. Drag the dot at a bar's end onto another bar to make that one wait for it (🆔 and ⛔); click a thin line or a ⛔ to remove a link. Each heading with tasks is its own chart.` });
       }
     }
   };
