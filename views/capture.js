@@ -32,7 +32,9 @@ const match = (list, word) => { const w = slug(word); return list.find(n => n.sl
 // ---------- the parser ----------
 // Returns the parts it understood and the task line it would write. Words in "quotes" are always kept as text.
 function parse(input) {
-  const out = { text: [], tags: [], fields: [], warnings: [] };
+  const out = { text: [], tags: [], fields: [], warnings: [], notes: [] };
+  // weekdays: "mon tue fri" or "mon-fri" without every = one task per day; with every = one task that repeats on those days
+  const wdays = [], everyDays = [];
   // the syntax the task line uses is understood too: ⏳ 2026-10-30, 📅, 🛫, ⏫ 🔺 🔽, 🔁 every week, 10:00 - 11:00
   const PRI_EMOJI = { "🔺": "!!", "⏫": "!", "🔼": "!med", "🔽": "!low", "⏬": "!lowest" }, DATE_EMOJI = { "⏳": "do", "📅": "due", "🛫": "start" };
   input = input
@@ -110,6 +112,20 @@ function parse(input) {
   const PRIW = { urgent: "🔺", highest: "🔺", high: "⏫", med: "🔼", medium: "🔼", normal: "", low: "🔽", lowest: "⏬" };
   const DO = ["do", "on", "plan", "sched", "scheduled"], DUE = ["by", "due", "before", "deadline"], START = ["start", "starts", "from"];
   const UNIT = /^(day|week|month|year|weekday|days|weeks|months|years)$/;
+  // weekdays starting at toks[i]: [[day indexes], tokensUsed]. "mon", "mon-fri", "mon to fri", "mon,wed,fri"
+  const isDay = x => /^[a-z]+$/.test(x) ? dayIndex(x) : -1;
+  const span = (a, b) => { const r = []; for (let k = a; ; k = (k + 1) % 7) { r.push(k); if (k === b || r.length > 7) break; } return r; };
+  const daysAt = i => {
+    const raw = (toks[i] || "").toLowerCase().replace(/[;.]$/, "");
+    const parts = raw.split(",").filter(Boolean);
+    const one = x => /^[a-z]+-[a-z]+$/.test(x) && x.split("-").every(y => isDay(y) >= 0) ? span(isDay(x.split("-")[0]), isDay(x.split("-")[1])) : isDay(x) >= 0 ? [isDay(x)] : null;
+    if (parts.length > 1 && parts.every(one)) return [parts.flatMap(one), 1];
+    const w = low(i);
+    if (/^[a-z]+-[a-z]+$/.test(w) && one(w)) return [one(w), 1];
+    if (isDay(w) >= 0 && ["to", "till", "until", "-"].includes(low(i + 1)) && isDay(low(i + 2)) >= 0) return [span(isDay(w), isDay(low(i + 2))), 3];
+    if (isDay(w) >= 0) return [[isDay(w)], 1];
+    return null;
+  };
   let lastLen = false;
   for (let i = 0; i < toks.length; i++) {
     const raw = toks[i], w = low(i), n1 = low(i + 1), n2 = low(i + 2);
@@ -118,6 +134,12 @@ function parse(input) {
     // dates after a word: "do fri" (⏳), "due 24-10" / "by fri" (📅), "start 1-11" (🛫)
     const kd = DO.includes(w) ? "date" : DUE.includes(w) ? "due" : START.includes(w) ? "startDate" : null;
     if (kd && dateAt(i + 1, true)) { const [d, n] = dateAt(i + 1, true); out[kd] = d; i += n; continue; }
+    // repeat on weekdays: "every mon wed fri", "every mon-fri", "every tue and thu"
+    if (w === "every" && daysAt(i + 1)) {
+      let j = i + 1, got;
+      while ((got = daysAt(j)) || (["and", "&", "+"].includes(low(j)) && daysAt(j + 1))) { if (!got) { j++; continue; } everyDays.push(...got[0]); j += got[1]; }
+      out.repeat = "every week"; i = j - 1; continue;
+    }
     // repeat: "every week", "every 2 days", "every monday", "every weekday"
     if (w === "every" && (UNIT.test(n1) || dayIndex(n1) >= 0 && /^[a-z]+$/.test(n1))) { out.repeat = `every ${dayIndex(n1) >= 0 ? DAYS[dayIndex(n1)] : n1}`; i += 1; continue; }
     if (w === "every" && /^\d+$/.test(n1) && UNIT.test(n2)) { out.repeat = `every ${n1} ${n2}`; i += 2; continue; }
@@ -160,6 +182,13 @@ function parse(input) {
     if (q) { out.qty = q[1] || q[2]; continue; }
     if (["qty", "quantity"].includes(w) && /^\d+$/.test(n1)) { out.qty = n1; i++; continue; }
     if (/^\d+$/.test(w) && /^(pcs|pieces?|pack|packs)$/.test(n1)) { out.qty = w; i++; continue; }
+    // weekdays on their own: one is a date (the coming one); several make one task per day, unless a repeat came first
+    const wd = daysAt(i);
+    if (wd && (w !== "sun" || wdays.length || everyDays.length || daysAt(i + 1) || (i > 0 && daysAt(i - 1)))) {
+      (out.repeat === "every week" ? everyDays : wdays).push(...wd[0]); i += wd[1] - 1;
+      if (["and", "&", "+"].includes(low(i + 1)) && daysAt(i + 2)) i++; // "mon and thu": the and goes with the days
+      continue;
+    }
     // a date on its own: today, fri, next mon, in 3 days, 24-10 (writes ⏳)
     const d = dateAt(i, false);
     if (d) { out.date = d[0]; i += d[1] - 1; continue; }
@@ -168,6 +197,25 @@ function parse(input) {
     if (/^#p\/[\w-]+$/.test(raw)) { const p = match(PEOPLE, raw.slice(3)); out.person = p || { name: raw.slice(3), slug: slug(raw.slice(3)) }; continue; }
     if (/^#[\w/-]+$/.test(raw)) { out.tags.push(raw); continue; }
     out.text.push(raw);
+  }
+  // weekdays: the coming one (for a repeat today counts), listed in week order from Monday
+  const NAMES = DAYS.map(x => x[0].toUpperCase() + x.slice(1));
+  const upcoming = (k, incl) => iso(addDays(base, (k - base.getDay() + 7) % 7 || (incl ? 0 : 7)));
+  const uniq = a => [...new Set(a)].sort((x, y) => ((x + 6) % 7) - ((y + 6) % 7));
+  if (everyDays.length) {
+    const ks = uniq(everyDays);
+    out.repeat = ks.length === 1 ? `every ${DAYS[ks[0]]}` : ks.join() === "1,2,3,4,5" ? "every weekday" : `every week on ${ks.map(k => NAMES[k]).join(", ")}`;
+    if (!out.date && !out.due) out.date = ks.map(k => upcoming(k, true)).sort()[0];
+  } else if (wdays.length === 1) {
+    if (!out.date) out.date = upcoming(wdays[0], false);
+  } else if (wdays.length > 1) {
+    const ks = uniq(wdays);
+    if (out.repeat) out.warnings.push(`Several days and a repeat: write "every ${ks.map(k => DAYS[k].slice(0, 3)).join(" ")}" to repeat on these days.`);
+    else if (!out.date) {
+      out.dates = ks.map(k => upcoming(k, false)).sort();
+      out.date = out.dates[0];
+      out.notes.push(`${out.dates.length} tasks, one for each day. For one task that repeats on these days every week, start with every: "every ${ks.map(k => DAYS[k].slice(0, 3)).join(" ")}".`);
+    }
   }
   // the Tasks plugin needs a date to repeat from
   if (out.repeat && !out.date && !out.due) out.date = iso(base);
@@ -198,7 +246,7 @@ function parse(input) {
   if (out.repeat) bits.push(`🔁 ${out.repeat}`);
   // the Tasks plugin only repeats a task that has a date, so a repeat without one starts on its first day
   // and a repeat on a weekday starts on the first such day (a time alone means today, which may be the wrong day)
-  if (out.repeat && !out.due) {
+  if (out.repeat && !out.due && !everyDays.length) {
     const d = out.date ? new Date(`${out.date}T12:00:00`) : new Date(base), wd = DAYS.findIndex(x => out.repeat === `every ${x}`);
     if (wd >= 0) d.setDate(d.getDate() + ((wd - d.getDay() + 7) % 7));
     else if (out.repeat === "every weekday") while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
@@ -206,10 +254,10 @@ function parse(input) {
   }
   bits.push(`➕ ${iso(base)}`);
   if (out.startDate) bits.push(`🛫 ${out.startDate}`);
-  if (out.date) bits.push(`⏳ ${out.date}`);
-  if (out.due) bits.push(`📅 ${out.due}`);
+  const lineOn = date => `- [ ] ${[...bits, date ? `⏳ ${date}` : "", out.due ? `📅 ${out.due}` : ""].filter(Boolean).join(" ")}`;
   out.title = title;
-  out.line = `- [ ] ${bits.filter(Boolean).join(" ")}`;
+  out.lines = (out.dates || [out.date]).map(lineOn);
+  out.line = out.lines[0];
   out.target = out.project?.path ? { path: out.project.path, heading: PROJECT_HEADING, label: `${out.project.name} › Inline tasks` } : { ...INBOX, label: "Tasks › Inbox" };
   return out;
 }
@@ -288,7 +336,7 @@ const ROWS = [
   ["Project", [["@name", "@"], ["project name", "project "]], "a project note's name", [["#project/name", "#project/"]], "and goes into that note"],
   ["Person", [["+name", "+"], ["with name", "with "]], "keeps the words", [["#p/name", "#p/"]], ""],
   ["Area", [...AREA_KEYS.map(k => `#${k}`), `area ${AREA_KEYS[0] || "work"}`], "", AREA_KEYS.map(k => `#${k}`), ""],
-  ["Repeat", ["every week", "every 2 days", "every monday", "every weekday"], "", ["🔁 every week"], ""],
+  ["Repeat", ["every week", "every 2 days", "every monday", "every weekday", "every mon wed fri"], "several days without every: one task per day", ["🔁 every week"], ""],
   ["Your own field", [["shop:: ikea", "shop:: "], ["link:: https://…", "link:: https://"]], "any name you make up, then :: and the value", [["[shop:: ikea]", "[shop:: ]"], ["[link:: https://…]", "[link:: https://]"]], "the purchases list shows and sorts by them"],
 ];
 // put text into the box at the cursor; the cursor lands where the value goes (in [price:: ] before the ], on a date: the date selected)
@@ -338,7 +386,8 @@ function showPreview() {
     const row = h("div", { class: "qc-row" }, preview);
     const chip = (k, v) => { const c = h("span", { class: "qc-chip" }, row); h("b", {}, c, `${k} `); c.appendChild(document.createTextNode(v)); };
     if (p.startDate) chip("Start", dmy(p.startDate));
-    if (p.date) chip("Do", dmy(p.date));
+    if (p.dates) chip("Do", p.dates.map(dmy).join(", "));
+    else if (p.date) chip("Do", dmy(p.date));
     if (p.start !== undefined) chip("Time", `${clock(p.start)} - ${clock(p.end)}`);
     if (p.due) chip("Due", dmy(p.due));
     if (p.est) chip("Length", p.est >= 60 ? `${Math.floor(p.est / 60)}h${p.est % 60 ? ` ${p.est % 60}m` : ""}` : `${p.est}m`);
@@ -350,7 +399,8 @@ function showPreview() {
     if (p.repeat) chip("Repeats", p.repeat);
     for (const f of p.fields) chip("Field", f.slice(1, -1));
     chip("Goes to", p.target.label);
-    h("div", { class: "qc-line" }, preview, p.line);
+    for (const l of p.lines) h("div", { class: "qc-line" }, preview, l);
+    for (const n of p.notes) h("div", { class: "qc-help" }, preview, n);
     for (const w of p.warnings) h("div", { class: "qc-warn" }, preview, w);
   }
   add.disabled = !linesOf().length;
@@ -361,10 +411,11 @@ async function commit() {
   const groups = new Map();
   for (const p of parsed) { const k = `${p.target.path}|${p.target.heading}`; if (!groups.has(k)) groups.set(k, { target: p.target, items: [] }); groups.get(k).items.push(p); }
   for (const { target, items } of groups.values()) {
-    if (await append(target, items.map(p => p.line))) for (const p of items) KEEP.added.unshift({ title: p.title, path: target.path, label: target.label });
+    if (await append(target, items.flatMap(p => p.lines))) for (const p of items) KEEP.added.unshift({ title: p.lines.length > 1 ? `${p.title} (${p.lines.length} days)` : p.title, path: target.path, label: target.label });
   }
   KEEP.added = KEEP.added.slice(0, 5);
-  notify(parsed.length === 1 ? `Added to ${parsed[0].target.label}` : `Added ${parsed.length} tasks`);
+  const count = parsed.reduce((n, p) => n + p.lines.length, 0);
+  notify(count === 1 ? `Added to ${parsed[0].target.label}` : `Added ${count} tasks`);
   ta.value = ""; KEEP.draft = "";
   grow(); showPreview(); showAdded(); ta.focus();
 }
