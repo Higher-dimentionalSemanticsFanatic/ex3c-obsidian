@@ -1,9 +1,10 @@
-# Push a tag that matches manifest.json's version (for example 0.21.0) and this attaches
+# Push a tag that matches manifest.json's version (for example 0.21.0), or run it from the Actions tab, and this attaches
 # main.js, manifest.json and styles.css to a GitHub release, which is what BRAT and Obsidian download.
 name: Release
 on:
   push:
     tags: ["*"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -13,9 +14,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check main.js carries the current widget code
         run: node scripts/bundle-views.mjs --check
-      - name: Check the tag matches manifest.json
-        run: test "$(jq -r .version manifest.json)" = "${GITHUB_REF_NAME}"
+      - name: Check the tag matches manifest.json (a run by hand uses the manifest version as the tag)
+        run: |
+          VERSION="$(jq -r .version manifest.json)"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then test "$VERSION" = "$GITHUB_REF_NAME"; fi
+          echo "TAG=$VERSION" >> "$GITHUB_ENV"
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
+        run: gh release create "$TAG" main.js manifest.json styles.css --target "$GITHUB_SHA" --title "$TAG" --notes "See CHANGELOG.md"
