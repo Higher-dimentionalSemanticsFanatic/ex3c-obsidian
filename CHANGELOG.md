@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+
+## 0.21.0 (01-11-2026)
+First public release, the same code as the plugin inside the EX3C Agenda 1.2.0 vault.
 - Widgets are part of the plugin: the 23 views that lived in the vault's `Meta/views/` (planner, project steps, capture, purchases, calendars, setup checks and the rest) are in `views/` and bundled into `main.js`, so they update with the plugin. `Meta/views/<name>.js` in the vault becomes a stub, so notes and templates that embed a widget keep working. Commands **Edit widget code** (your own copy in `Meta/views/`, which then wins) and **Reset widget to built-in**. A widget that throws now shows the error in place.
 - Inbox to sort widget (Home): Today (⏳ today), Soon (#soon), Eventually (moves to ## Someday).
 - Birthdays widget (People tab) from the birthday property of people notes; birthdays on their day in the planner.
