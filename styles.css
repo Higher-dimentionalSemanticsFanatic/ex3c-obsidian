@@ -1852,3 +1852,8 @@ body:not(.is-mobile) .life-os-fab { bottom: 40px; } /* above the desktop status 
 /* long lists: a find box and a Show all button (People directory, Project pulse, Open conversations) */
 .life-os-list-find { width: 100%; max-width: 320px; margin: 0 0 8px; }
 .life-os-list-more { margin-top: 8px; font-size: 12px; }
+
+/* a widget that failed shows its error in place; the area rename hint; the colour row in Configure */
+.life-os-widget-error { white-space: pre-wrap; color: var(--text-error); font-size: 12px; }
+.life-os-area-keytext { color: var(--text-muted); font-size: 12px; }
+.life-os-edit-color { align-items: center; }
