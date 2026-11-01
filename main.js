@@ -199,34 +199,8 @@ const PERIOD_ACTIONS = [
   },
 ];
 
-// The Markdown dashboards were retired on 25-10-2026; a shortcut that pointed at one opens the tab that shows the same.
+// The Markdown dashboards were retired on 25-10-2026; a link to one in an old note opens the tab that shows the same.
 const RETIRED_DASHBOARDS = { "00 Dashboards/Dashboard.md": "home", "00 Dashboards/Task Dashboard.md": "home", "00 Dashboards/Projects Dashboard.md": "projects", "00 Dashboards/Habit Canvas.md": "review", "00 Dashboards/Daily Questions.md": "review", "00 Dashboards/Boards.md": "library" };
-const DESTINATIONS = [
-  {
-    icon: "layout-dashboard",
-    label: "EX3C AgendA",
-    description: "Direction, habits, questions, and life wheel.",
-    path: "00 Dashboards/Dashboard.md",
-  },
-  {
-    icon: "list-checks",
-    label: "Tasks",
-    description: "See the full task system.",
-    path: "00 Dashboards/Task Dashboard.md",
-  },
-  {
-    icon: "folder-kanban",
-    label: "Projects",
-    description: "Review active projects and ideas.",
-    path: "00 Dashboards/Projects Dashboard.md",
-  },
-  {
-    icon: "columns-3",
-    label: "Boards",
-    description: "Open writing and project boards.",
-    path: "00 Dashboards/Boards.md",
-  },
-];
 
 const NAV_ITEMS = [
   { id: "home", icon: "home", label: "Home" },
@@ -251,18 +225,6 @@ const MODULES = {
     actions: [
       PERIOD_ACTIONS[0],
       ...CAPTURE_ACTIONS,
-      {
-        icon: "list-checks",
-        label: "Today’s tasks",
-        description: "Open the task recommendation dashboard.",
-        path: "00 Dashboards/Task Dashboard.md",
-      },
-      {
-        icon: "activity",
-        label: "Habits",
-        description: "Review current habit consistency.",
-        path: "00 Dashboards/Habit Canvas.md",
-      },
     ],
   },
   plan: {
@@ -272,12 +234,6 @@ const MODULES = {
       "Keep today, this week, and this quarter connected to the same direction.",
     actions: [
       ...PERIOD_ACTIONS,
-      {
-        icon: "folder-kanban",
-        label: "Projects",
-        description: "Review active projects and quarter alignment.",
-        path: "00 Dashboards/Projects Dashboard.md",
-      },
       {
         icon: "clock-3",
         label: "Ideal week",
@@ -291,32 +247,7 @@ const MODULES = {
     title: "Focus",
     description:
       "See the commitments competing for attention and return to the work that matters.",
-    actions: [
-      {
-        icon: "compass",
-        label: "EX3C AgendA",
-        description: "Return to the whole-life overview.",
-        path: "00 Dashboards/Dashboard.md",
-      },
-      {
-        icon: "list-checks",
-        label: "Task recommendations",
-        description: "Review due, scheduled, priority, and discuss tasks.",
-        path: "00 Dashboards/Task Dashboard.md",
-      },
-      {
-        icon: "folder-kanban",
-        label: "Project momentum",
-        description: "Find active projects that need a next action.",
-        path: "00 Dashboards/Projects Dashboard.md",
-      },
-      {
-        icon: "activity",
-        label: "Habit signals",
-        description: "See consistency alongside the days that explain it.",
-        path: "00 Dashboards/Habit Canvas.md",
-      },
-    ],
+    actions: [],
   },
   review: {
     eyebrow: "Evidence over memory",
@@ -324,27 +255,9 @@ const MODULES = {
     description:
       "Look back across days and quarters before deciding what should change next.",
     actions: [
-      {
-        icon: "line-chart",
-        label: "Daily questions",
-        description: "Review effort scores and trends.",
-        path: "00 Dashboards/Daily Questions.md",
-      },
-      {
-        icon: "activity",
-        label: "Habit canvas",
-        description: "Review streaks, gaps, and completion.",
-        path: "00 Dashboards/Habit Canvas.md",
-      },
       PERIOD_ACTIONS[1],
       PERIOD_ACTIONS[2],
       PERIOD_ACTIONS[3],
-      {
-        icon: "compass",
-        label: "Whole-life review",
-        description: "Open the Dashboard and life wheel.",
-        path: "00 Dashboards/Dashboard.md",
-      },
     ],
   },
   projects: {
@@ -353,12 +266,6 @@ const MODULES = {
     description:
       "Keep outcomes, next actions, people, notes, and quarter commitments together.",
     actions: [
-      {
-        icon: "layout-dashboard",
-        label: "Projects dashboard",
-        description: "Review all active projects.",
-        path: "00 Dashboards/Projects Dashboard.md",
-      },
       {
         icon: "columns-3",
         label: "Projects board",
@@ -398,12 +305,6 @@ const MODULES = {
         command: "quickadd:choice:lifeos-new-person",
       },
       {
-        icon: "messages-square",
-        label: "Discuss queue",
-        description: "Open tasks grouped by person and discussion context.",
-        path: "00 Dashboards/Task Dashboard.md",
-      },
-      {
         icon: "search",
         label: "Search people",
         description: "Search the vault for a person or meeting context.",
@@ -417,12 +318,6 @@ const MODULES = {
     description:
       "Move ideas into posts, video scripts, and reviews without losing sources.",
     actions: [
-      {
-        icon: "columns-3",
-        label: "Creative boards",
-        description: "Open every writing pipeline.",
-        path: "00 Dashboards/Boards.md",
-      },
       ...CAPTURE_MENU_ACTIONS.filter((action) =>
         [
           "quickadd:choice:lifeos-post-idea",
@@ -453,12 +348,6 @@ const MODULES = {
         description: "Search books, sources, and connected notes.",
         command: "global-search:open",
       },
-      {
-        icon: "pen-tool",
-        label: "Writing pipelines",
-        description: "Use the library in active creative work.",
-        path: "00 Dashboards/Boards.md",
-      },
     ],
   },
   ai: {
@@ -472,18 +361,6 @@ const MODULES = {
         label: "Open assistant",
         description: "Use the complete prompt library.",
         path: "00 Dashboards/Assistant.md",
-      },
-      {
-        icon: "sun",
-        label: "What matters today",
-        description: "Open the EX3C AgendA brief and daily context.",
-        path: "00 Dashboards/Dashboard.md",
-      },
-      {
-        icon: "list-checks",
-        label: "Task triage",
-        description: "Open the task dashboard and its AI workflow.",
-        path: "00 Dashboards/Task Dashboard.md",
       },
       {
         icon: "shield-check",
@@ -615,7 +492,7 @@ const WIDGETS = [
  {
   "id": "today.actions",
   "label": "Check-in shortcuts",
-  "desc": "Today, 4 captures, Today's tasks, Habits.",
+  "desc": "Today, Journal, Log a win, Gratitude, Add a task.",
   "from": "Today"
  },
  {
@@ -627,7 +504,7 @@ const WIDGETS = [
  {
   "id": "plan.actions",
   "label": "Planning shortcuts",
-  "desc": "Today, This week, This quarter, Retreat, Projects, Ideal week.",
+  "desc": "Today, This week, This quarter, Retreat, Ideal week.",
   "from": "Plan"
  },
  {
@@ -646,12 +523,6 @@ const WIDGETS = [
   "id": "focus.commitments",
   "label": "Active commitments",
   "desc": "Active project notes.",
-  "from": "Focus"
- },
- {
-  "id": "focus.actions",
-  "label": "Focus shortcuts",
-  "desc": "EX3C AgendA, Task recommendations, Project momentum, Habit signals.",
   "from": "Focus"
  },
  {
@@ -687,7 +558,7 @@ const WIDGETS = [
  {
   "id": "review.actions",
   "label": "Review shortcuts",
-  "desc": "Daily questions, Habit canvas, This week, This quarter, Retreat, Whole-life review.",
+  "desc": "This week, This quarter, Retreat.",
   "from": "Review"
  },
  {
@@ -699,7 +570,7 @@ const WIDGETS = [
  {
   "id": "projects.actions",
   "label": "Project shortcuts",
-  "desc": "Projects dashboard, Projects board, Capture an idea, New project, Quarter plan.",
+  "desc": "Projects board, Capture an idea, New project, Quarter plan.",
   "from": "Projects"
  },
  {
@@ -717,7 +588,7 @@ const WIDGETS = [
  {
   "id": "people.actions",
   "label": "People shortcuts",
-  "desc": "New person, Discuss queue, Search people.",
+  "desc": "New person, Search people.",
   "from": "People"
  },
  {
@@ -735,7 +606,7 @@ const WIDGETS = [
  {
   "id": "create.actions",
   "label": "Writing shortcuts",
-  "desc": "Creative boards, 3 idea captures, 3 new drafts.",
+  "desc": "3 idea captures, 3 new drafts.",
   "from": "Create"
  },
  {
@@ -747,7 +618,7 @@ const WIDGETS = [
  {
   "id": "library.actions",
   "label": "Library shortcuts",
-  "desc": "New book note, Search the library, Writing pipelines.",
+  "desc": "New book note, Search the library.",
   "from": "Library"
  },
  {
@@ -777,7 +648,7 @@ const WIDGETS = [
  {
   "id": "ai.actions",
   "label": "AI shortcuts",
-  "desc": "Open assistant, What matters today, Task triage, Setup and permissions.",
+  "desc": "Open assistant, Setup and permissions.",
   "from": "AI"
  },
  {
@@ -1529,6 +1400,7 @@ class LifeOSHomeView extends ItemView {
         if (id.startsWith("user:")) return this.renderDataviewWidget(parent, `await dv.view(${JSON.stringify(`${USER_WIDGET_DIR}/${id.slice(5)}`)}, { area: ${JSON.stringify(this.tabArea())} });`);
         const moduleId = id.endsWith(".actions") ? id.slice(0, -".actions".length) : null;
         if (moduleId && MODULES[moduleId]) {
+          if (!MODULES[moduleId].actions.length) return;
           return this.renderActionSection(parent, WIDGET_BY_ID.get(id)?.label || "Shortcuts", "Every control below opens a real note, dashboard, or capture workflow.", MODULES[moduleId].actions, run);
         }
         parent.createDiv({ cls: "life-os-live-empty", text: `Unknown widget: ${id}` });
@@ -4125,7 +3997,7 @@ module.exports = class LifeOSPlugin extends Plugin {
     }));
 
     // one command per page, offered only while that page is in your layout (ids stay the same as before)
-    const PAGE_COMMANDS = [["today", "Check-in"], ["projects", "Projects"], ["work", "Work"], ["study", "Study"], ["personal", "Personal"], ["people", "People"], ["library", "Library"], ["review", "Review"], ["plan", "Plan"], ["focus", "Focus"], ["create", "Create"], ["ai", "AI"]];
+    const PAGE_COMMANDS = [["today", "Check-in"], ["projects", "Projects"], ["work", "Work"], ["study", "Study"], ["personal", "Personal"], ["people", "People"], ["library", "Library"], ["review", "Review"]];
     for (const [id, label] of PAGE_COMMANDS) {
       this.addCommand({
         id: `open-${id}`,
