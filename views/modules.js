@@ -12,7 +12,7 @@ const MODULES = [
   { id: "writing", label: "Writing boards", desc: "Posts, Video scripts and Reviews: their folders, boards, templates, guide and prompt.",
     paths: ["06 Writing", "Templates/Post.md", "Templates/Video Script.md", "Templates/Review.md", "Guide/09 Workflow - Writing.md", "00 Dashboards/Boards.md", "Prompts/10 Writing Pipeline.md"],
     plugins: ["obsidian-kanban"], follows: true,
-    after: "The Create widgets will be empty; they are not on any tab in your layout. Kanban is switched off with it (only the Writing boards use it); Restore switches it back on." },
+    after: "The Ideas and Create notes widgets (Widgets panel) will have no boards to write to. Kanban is switched off with it (only the Writing boards use it); Restore switches it back on." },
   { id: "ai", label: "Prompts and the AI page", desc: "The prompt library, the Assistant dashboard, the AI guides and the AI tab.",
     paths: ["Prompts", "00 Dashboards/Assistant.md", "Guide/14 Agent Client and Claude Code.md", "Guide/19 Obsidian MCP Bridge.md", "Guide/20 Prompt Library.md"],
     tabs: ["ai"], plugins: ["agent-client", "obsidian-local-rest-api"], strip: true, after: "Every AI button in your notes and templates, the links to the Assistant page and the AI setup keys are taken out too. Restore puts each one back where it was." },
