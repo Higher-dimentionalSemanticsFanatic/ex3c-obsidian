@@ -17,6 +17,12 @@ const notify = m => (obs.Notice ? new obs.Notice(m) : console.warn(m));
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 const dmy = s => (s ? moment(String(s)).format("DD-MM-YYYY") : "");
 const UI = (window.__ex3cProjectBoard ??= { undo: null });
+UI.open ??= {};
+// per device: the area filter and the sort order of the cards
+const PREF_KEY = "ex3c-project-board";
+const PREF = (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); } catch (e) { return {}; } })();
+const savePref = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(PREF)); } catch (e) {} };
+const CARDS_SHOWN = 6;
 const parseEst = s => { const v = String(s ?? "").trim().toLowerCase().replace(",", "."); if (!v) return null; if (/^\d+(\.\d+)?$/.test(v)) return parseFloat(v); let m = 0, hit = false; for (const x of v.matchAll(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)(?![a-z])/g)) { hit = true; m += parseFloat(x[1]) * (x[2].startsWith("h") ? 60 : 1); } return hit ? m : null; };
 const fmtEst = min => { const h = Math.floor(min / 60), m = Math.round(min - h * 60); return [h ? `${h}h` : "", m ? `${m}m` : ""].filter(Boolean).join(" ") || "0m"; };
 const money = n => n.toLocaleString(undefined, { style: "currency", currency: "EUR" });
@@ -91,10 +97,33 @@ root.createEl("style", { text: `
 .pjb-card select { font-size: 11px; height: auto; padding: 0 4px; margin-top: 4px; }
 .pjb-chip { font-size: 10px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--background-modifier-border); margin-left: 4px; }
 .pjb-undo { font-size: 12px; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
-.pjb-undo button { font-size: 11px; padding: 1px 8px; height: auto; }` });
+.pjb-undo button { font-size: 11px; padding: 1px 8px; height: auto; }
+.pjb-filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; font-size: 12px; }
+.pjb-filter button { font-size: 11px; padding: 1px 9px; height: auto; border-radius: 10px; }
+.pjb-filter button.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.pjb-filter select { font-size: 11px; height: auto; padding: 0 4px; margin-left: auto; }
+.pjb-more { width: 100%; font-size: 11px; height: auto; padding: 3px 0; margin-top: 2px; }
+.pjb-col.is-empty { min-height: 0; } .pjb-col.is-empty .pjb-head { padding-bottom: 2px; }` });
 function render() {
   root.querySelectorAll(":scope > :not(style)").forEach(e => e.remove());
-  const list = projects();
+  const all = projects();
+  // the area filter (not on an area tab, which is one area already) and the sort
+  const areaOf = p => String(p.area ?? "").toLowerCase();
+  if (!AREA) {
+    const keys = [...new Set(all.map(areaOf))].sort((a, b) => (a === "") - (b === "") || AREA_KEYS.indexOf(a) - AREA_KEYS.indexOf(b) || a.localeCompare(b));
+    if (PREF.area !== undefined && PREF.area !== "all" && !keys.includes(PREF.area)) PREF.area = "all";
+    const bar = root.createEl("div", { cls: "pjb-filter" });
+    if (keys.length > 1) for (const k of ["all", ...keys]) {
+      const n = k === "all" ? all.length : all.filter(p => areaOf(p) === k).length;
+      const b = bar.createEl("button", { text: `${k === "all" ? "All" : k === "" ? "No area" : k[0].toUpperCase() + k.slice(1)} ${n}`, cls: (PREF.area ?? "all") === k ? "is-on" : "" });
+      b.addEventListener("click", () => { PREF.area = k; savePref(); render(); });
+    }
+    const sort = bar.createEl("select", { attr: { "aria-label": "Sort the cards" } });
+    for (const [v, t] of [["due", "Due date first"], ["name", "Name"], ["left", "Most time left"]]) sort.createEl("option", { text: t, value: v });
+    sort.value = PREF.sort ?? "due";
+    sort.addEventListener("change", () => { PREF.sort = sort.value; savePref(); render(); });
+  }
+  const list = all.filter(p => AREA || (PREF.area ?? "all") === "all" || areaOf(p) === PREF.area);
   const tagged = new Map();
   for (const t of dv.pages().where(p => !/^(Templates|\.trash|scripts|wiki)\//.test(p.file.path)).file.tasks.where(t => (t.tags ?? []).some(x => x.startsWith("#project/"))).array())
     for (const tag of t.tags.filter(x => x.startsWith("#project/"))) { const k = tag.split("/").slice(0, 2).join("/"); if (!tagged.has(k)) tagged.set(k, []); tagged.get(k).push(t); }
@@ -106,14 +135,20 @@ function render() {
   const cols = root.createEl("div", { cls: "pjb-cols" });
   for (const col of COLS) {
     const mine = list.filter(p => colOf(p) === col.id);
-    const el = cols.createEl("div", { cls: "pjb-col", attr: { "data-col": col.id } });
+    const el = cols.createEl("div", { cls: `pjb-col${mine.length ? "" : " is-empty"}`, attr: { "data-col": col.id } });
     const head = el.createEl("div", { cls: "pjb-head", text: col.label });
     head.createEl("span", { text: String(mine.length) });
     if (col.id === "idea") { const add = head.createEl("button", { text: "+ Idea" }); add.addEventListener("click", () => void newIdea()); }
     el.addEventListener("dragover", e => { e.preventDefault(); el.addClass("is-over"); });
     el.addEventListener("dragleave", () => el.removeClass("is-over"));
     el.addEventListener("drop", e => { e.preventDefault(); el.removeClass("is-over"); const p = list.find(x => x.file.path === e.dataTransfer.getData("text/x-ex3c-project")); if (p && colOf(p) !== col.id) void setStatus(p, col.id); });
-    for (const p of mine) {
+    // sort: due date first (undated last, by name), by name, or by estimated time left
+    const leftOf = p => tasksOf(p, tagged).filter(t => !t.completed && t.status !== "-" && !(t.children ?? []).some(c => c.task)).reduce((m, t) => m + (parseEst(t.text.match(/\[est::\s*([^\]]*)\]/)?.[1]) ?? 0), 0);
+    const by = PREF.sort ?? "due";
+    if (by === "due") mine.sort((a, b) => (a.due ? String(a.due) : "9999") .localeCompare(b.due ? String(b.due) : "9999") || a.file.name.localeCompare(b.file.name));
+    else if (by === "left") { const L = new Map(mine.map(p => [p, leftOf(p)])); mine.sort((a, b) => L.get(b) - L.get(a) || a.file.name.localeCompare(b.file.name)); }
+    const showAll = UI.open[col.id] || mine.length <= CARDS_SHOWN + 2;
+    for (const p of showAll ? mine : mine.slice(0, CARDS_SHOWN)) {
       const ts = tasksOf(p, tagged), open = ts.filter(t => !t.completed && t.status !== "-"), done = ts.filter(t => t.completed);
       const card = el.createEl("div", { cls: "pjb-card", attr: { draggable: "true" } });
       card.addEventListener("dragstart", e => { e.dataTransfer.setData("text/x-ex3c-project", p.file.path); e.dataTransfer.effectAllowed = "move"; });
@@ -136,6 +171,10 @@ function render() {
       const sel = card.createEl("select", { attr: { "aria-label": `Status of ${p.file.name}` } });
       for (const c of COLS) { const o = sel.createEl("option", { text: c.label, value: c.id }); if (c.id === col.id) o.selected = true; }
       sel.addEventListener("change", () => void setStatus(p, sel.value));
+    }
+    if (mine.length > CARDS_SHOWN + 2) {
+      const more = el.createEl("button", { cls: "pjb-more", text: UI.open[col.id] ? `Show the first ${CARDS_SHOWN}` : `Show all ${mine.length} (${mine.length - CARDS_SHOWN} more)` });
+      more.addEventListener("click", () => { UI.open[col.id] = !UI.open[col.id]; render(); });
     }
   }
 }

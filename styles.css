@@ -1848,3 +1848,7 @@ body.ex3c-ai-off .agent-client-floating-button-root { display: none !important; 
 body:not(.is-mobile) .life-os-fab { bottom: 40px; } /* above the desktop status bar in a narrow window */
 .life-os-fab svg { width: 26px; height: 26px; }
 .life-os-quick-capture-modal .life-os-quick-capture-more { margin-top: 10px; font-size: var(--font-ui-small); }
+
+/* long lists: a find box and a Show all button (People directory, Project pulse, Open conversations) */
+.life-os-list-find { width: 100%; max-width: 320px; margin: 0 0 8px; }
+.life-os-list-more { margin-top: 8px; font-size: 12px; }

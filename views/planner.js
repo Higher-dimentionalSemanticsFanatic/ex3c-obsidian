@@ -896,7 +896,19 @@ function render() {
   for (const [v, t] of [["suggested", "Suggested"], ["due", "Due date"], ["est", "Shortest first"], ["priority", "Priority"], ["project", "Project"], ["cost", "Cost"]]) h("option", { value: v }, ss, t);
   ss.value = state.sort;
   ss.addEventListener("change", () => { state.sort = ss.value; save(); render(); });
+  // a long list: find by words (task, project) and show the first STEPS_SHOWN, the rest one click away
+  const STEPS_SHOWN = 15;
+  const fi = h("input", { type: "search", class: "pln-find", placeholder: "Find a step or project", "aria-label": "Find in next steps" }, fb);
+  fi.value = UI.find ?? "";
+  fi.addEventListener("input", () => { UI.find = fi.value; UI.findAt = fi.selectionStart; render(); });
+  fi.addEventListener("focus", () => { UI.findFocus = true; });
+  fi.addEventListener("blur", () => setTimeout(() => { if (fi.isConnected) UI.findFocus = false; }, 0));
+  if (UI.findFocus) setTimeout(() => { if (fi.isConnected) { fi.focus(); const at = UI.findAt ?? fi.value.length; fi.setSelectionRange(at, at); } }, 0);
+  const words = String(UI.find ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  const found = words.length ? list.filter(r => { const s = `${label(r.raw)} ${r.project}`.toLowerCase(); return words.every(w => s.includes(w)); }) : list;
+  const shown = UI.allSteps || found.length <= STEPS_SHOWN + 3 ? found : found.slice(0, STEPS_SHOWN);
   if (!list.length) h("p", { class: "pln-sub" }, pl, "No unplanned next steps.");
+  else if (!found.length) h("p", { class: "pln-sub" }, pl, `No next step matches "${UI.find}".`);
   const table = h("table", { class: "pln-table" }, pl);
   const days = Array.from({ length: 7 }, (_, i) => iso(addDays(TODAY_D, i)));
   // total rows (idea from Operon's table summaries): one under each project when sorted by project, one for the list
@@ -906,9 +918,10 @@ function render() {
     h("td", {}, tr);
     h("td", { colspan: "3" }, tr, `${title}: ${rs.length} step${rs.length === 1 ? "" : "s"} · ${plusBuffer(mm.total)}${mm.missing ? ` (${mm.missing} counted at ~${GUESS}m)` : ""}${cost ? ` · ${cost.toLocaleString(undefined, { style: "currency", currency: "EUR" })}` : ""}`);
   };
+  // a project's total counts all its matching steps, also the ones not shown
   let block = [];
-  const flush = () => { if (state.sort === "project" && block.length > 1) totalRow(block, `${block[0].project} total`); block = []; };
-  for (const r of list) {
+  const flush = () => { const all = block.length ? found.filter(x => x.project === block[0].project) : []; if (state.sort === "project" && all.length > 1) totalRow(all, `${block[0].project} total`); block = []; };
+  for (const r of shown) {
     if (block.length && block[0].project !== r.project) flush();
     block.push(r);
     const m = meta(r.raw);
@@ -934,7 +947,12 @@ function render() {
     menuOn(tr, r);
   }
   flush();
-  if (list.length > 1) totalRow(list, "All");
+  if (found.length > shown.length || (UI.allSteps && found.length > STEPS_SHOWN + 3)) {
+    const tr = h("tr", { class: "pln-more" }, table), td = h("td", { colspan: "4" }, tr);
+    const b = h("button", { class: "pln-btn" }, td, UI.allSteps ? `Show the first ${STEPS_SHOWN}` : `Show all ${found.length} (${found.length - shown.length} more)`);
+    b.addEventListener("click", () => { UI.allSteps = !UI.allSteps; render(); });
+  }
+  if (found.length > 1) totalRow(found, words.length ? "All matching" : "All");
 
   // later steps: open steps that are not next yet, with what they wait for, so nothing in a project is invisible
   const later = ALL.filter(r => { const m = meta(r.raw); return !r.isNext && !m.done && !m.sched && !m.event && !r.kids.some(k => !meta(k.raw).done); });
