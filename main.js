@@ -3926,8 +3926,8 @@ module.exports = class LifeOSPlugin extends Plugin {
 
     this.addCommand({
       id: "open-capture",
-      name: "Open EX3C AgendA capture",
-      callback: () => this.openCapture(),
+      name: "Quick capture (type a task the way you say it)",
+      callback: () => this.openQuickCapture(),
     });
 
     this.addCommand({
@@ -4858,6 +4858,13 @@ module.exports = class LifeOSPlugin extends Plugin {
 
   openCapture() {
     new LifeOSCaptureModal(this.app, this).open();
+  }
+
+  // The quick capture box in a window, from anywhere (Ctrl/Cmd+Shift+C). On an area tab the task gets that area.
+  openQuickCapture() {
+    const active = this.app.workspace.activeLeaf?.view;
+    const view = active?.getViewType?.() === "life-os-home" ? active : { plugin: this, tabArea: () => null };
+    new LifeOSQuickCaptureModal(this.app, view).open();
   }
 
   runCommand(commandId, label) {
