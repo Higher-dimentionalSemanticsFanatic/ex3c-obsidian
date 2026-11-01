@@ -11,7 +11,8 @@ const MODULES = [
     after: "The Life areas widget and the Retreat buttons will show nothing to open; take them off in Configure." },
   { id: "writing", label: "Writing boards", desc: "Posts, Video scripts and Reviews: their folders, boards, templates, guide and prompt.",
     paths: ["06 Writing", "Templates/Post.md", "Templates/Video Script.md", "Templates/Review.md", "Guide/09 Workflow - Writing.md", "00 Dashboards/Boards.md", "Prompts/10 Writing Pipeline.md"],
-    after: "The Create widgets will be empty; they are not on any tab in your layout." },
+    plugins: ["obsidian-kanban"], follows: true,
+    after: "The Create widgets will be empty; they are not on any tab in your layout. Kanban is switched off with it (only the Writing boards use it); Restore switches it back on." },
   { id: "ai", label: "Prompts and the AI page", desc: "The prompt library, the Assistant dashboard, the AI guides and the AI tab.",
     paths: ["Prompts", "00 Dashboards/Assistant.md", "Guide/14 Agent Client and Claude Code.md", "Guide/19 Obsidian MCP Bridge.md", "Guide/20 Prompt Library.md"],
     tabs: ["ai"], plugins: ["agent-client", "obsidian-local-rest-api"], strip: true, after: "Every AI button in your notes and templates, the links to the Assistant page and the AI setup keys are taken out too. Restore puts each one back where it was." },
@@ -64,8 +65,10 @@ async function countFiles(path) {
   const l = await ad.list(path); let n = l.files.length; for (const f of l.folders) n += await countFiles(f); return n;
 }
 const records = () => life?.layout?.modules || {};
-// Plugins a module switches off with it (AI: Agent Client and Local REST API), and back on when restored.
-const PLUGIN_NAMES = { "agent-client": "Agent Client", "obsidian-local-rest-api": "Local REST API" };
+// Plugins a module switches off with it (AI: Agent Client and Local REST API; Writing: Kanban), and back on when restored.
+// follows: the plugin is only there for this module, so while the module is in the vault the card offers to switch it on.
+const PLUGIN_NAMES = { "agent-client": "Agent Client", "obsidian-local-rest-api": "Local REST API", "obsidian-kanban": "Kanban" };
+const pluginsOff = m => (m.plugins || []).filter(id => app.plugins.manifests?.[id] && !app.plugins.enabledPlugins.has(id));
 const pluginsOn = m => (m.plugins || []).filter(id => app.plugins.enabledPlugins.has(id));
 const pluginsInstalled = m => (m.plugins || []).filter(id => app.plugins.manifests?.[id]);
 // What Restore would bring back: from the record kept at removal, or (for modules removed before records existed)
@@ -248,13 +251,24 @@ async function render() {
         setTimeout(render, 400);
       });
       if (m.after) h("div", { class: "mods-sub", style: "margin-top:4px" }, card, `After removing: ${m.after}`);
+      const offNow = m.follows ? pluginsOff(m) : [];
+      if (offNow.length) {
+        const names = offNow.map(id => PLUGIN_NAMES[id] || id);
+        h("div", { class: "mods-sub", style: "margin-top:4px" }, card, `${names.join(" and ")} ${names.length === 1 ? "is" : "are"} switched off, so the boards open as plain notes.`);
+        const on = h("button", { class: "mod-cta" }, card, `Switch ${names.join(" and ")} on`);
+        on.addEventListener("click", async () => {
+          for (const id of offNow) { try { await app.plugins.enablePluginAndSave(id); } catch (e) { console.error(e); notify(`Could not switch on ${PLUGIN_NAMES[id] || id}: ${e.message}`); } }
+          notify(`${names.join(" and ")} switched on for ${m.label}.`);
+          setTimeout(render, 600);
+        });
+      }
     }
     if (canRestore) {
       const todo = back.items.filter(x => !x.there), n = todo.reduce((s, x) => s + x.files, 0);
       h("div", { class: "mods-sub", style: "margin-top:4px" }, card, back.rec && !back.rec.legacy ? `Removed ${moment(back.rec.removed, "YYYY-MM-DD HH:mm").format("DD-MM-YYYY HH:mm")}. In .trash: ${fileWord(n)}${back.tabs.length ? ` and the ${back.tabs.map(t => t.tab?.label || tabName(t.std)).join(", ")} tab` : ""}.` : `Found in .trash: ${fileWord(n)}${back.tabs.length ? `, and the ${back.tabs.map(t => tabName(t.std)).join(", ")} page can be added back` : ""}.`);
       const r = h("button", { class: "mod-cta" }, card, "Restore…");
       r.addEventListener("click", async () => {
-        const backOn = (back.rec?.plugins || []).filter(id => app.plugins.manifests?.[id] && !app.plugins.enabledPlugins.has(id));
+        const backOn = [...new Set([...(back.rec?.plugins || []), ...(m.follows ? m.plugins : [])])].filter(id => app.plugins.manifests?.[id] && !app.plugins.enabledPlugins.has(id));
         const lines = [...todo.map(x => `.trash/${x.to} → ${x.from}${x.files > 1 ? ` (${fileWord(x.files)})` : ""}`), ...(back.rec?.stripped?.notes || []).map(n => `AI buttons and links back into ${n.path}`), ...backOn.map(id => `Switch the ${PLUGIN_NAMES[id] || id} plugin back on`), ...back.tabs.map(t => `The ${t.tab?.label || tabName(t.std)} tab back in EX3C Agenda`), ...back.items.filter(x => x.there).map(x => `Skipped: ${x.from} already exists`)];
         if (!(await confirmBox(`Restore ${m.label}`, lines, `Restore ${fileWord(n)}`, back.rec && !back.rec.legacy ? "Each item goes back to where it was when you removed it." : "These were removed before Restore existed, so they were matched by name in .trash. Check the list."))) return;
         const restored = [];

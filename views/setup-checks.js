@@ -14,8 +14,10 @@ const today = moment();
 const aiOn = app.plugins.plugins["ex3c-agenda"]?.aiOn?.() !== false;
 
 // Tier 0: the app
-for (const [id, name] of [["ex3c-agenda", "EX3C Agenda"], ["dataview", "Dataview"], ["templater-obsidian", "Templater"], ["periodic-notes", "Periodic Notes"], ["quickadd", "QuickAdd"], ["obsidian-tasks-plugin", "Tasks"], ["obsidian-kanban", "Kanban"]])
+for (const [id, name] of [["ex3c-agenda", "EX3C Agenda"], ["dataview", "Dataview"], ["templater-obsidian", "Templater"], ["periodic-notes", "Periodic Notes"], ["quickadd", "QuickAdd"], ["obsidian-tasks-plugin", "Tasks"]])
   add(0, `${name} plugin enabled`, enabled(id), "Settings → Community plugins");
+// Kanban only draws the Writing boards: not required, and only listed while the Writing module is in the vault.
+if (app.vault.getAbstractFileByPath("06 Writing")) add(0, "Kanban plugin enabled (Writing boards)", enabled("obsidian-kanban"), "Setup → Optional modules → Writing boards → Switch Kanban on", "only the Writing boards use it", true);
 add(0, "Day Planner plugin enabled (timeline and week view)", enabled("obsidian-day-planner"), "Settings → Community plugins", "the planner works without it", true);
 add(0, "EX3C Agenda application command registered", !!app.commands.findCommand("ex3c-agenda:open-home"), "Command palette → EX3C Agenda: Open EX3C Agenda home");
 add(0, "Dataview JavaScript queries on", !!(pset("dataview")?.enableDataviewJs), "Settings → Dataview");
